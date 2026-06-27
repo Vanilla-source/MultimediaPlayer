@@ -463,12 +463,12 @@ namespace FinalTest
             {
                 if (_playerController.MediaPlayer != null)
                     _playerController.MediaPlayer.Scale = 0;
-            }));
+            });
             menu.Items.Add("拉伸填充", null, (s, e) =>
             {
                 if (_playerController.MediaPlayer != null)
                     _playerController.MediaPlayer.Scale = 1;
-            }));
+            });
             return menu;
         }
 
