@@ -710,7 +710,7 @@ namespace FinalTest
         /// 打开媒体文件对话框，添加文件到播放列表
         ///
         /// 支持的格式：
-        /// 音频 — *.mp3;*.wav;*.wma;*.flac;*.aac;*.ogg;*.m4a
+        /// 音频 — *.mp3;*.wav;*.wma;*.flac;*.aac;*.ogg;*.m4a;*.odd
         /// 视频 — *.mp4;*.avi;*.wmv;*.mov;*.mkv;*.flv;*.mpeg;*.mpg;*.webm
         /// </summary>
         private void OpenMediaFiles()
@@ -718,7 +718,7 @@ namespace FinalTest
             using (var openFileDialog = new OpenFileDialog())
             {
                 openFileDialog.Title = "选择媒体文件";
-                openFileDialog.Filter = "所有媒体文件|*.mp3;*.wav;*.wma;*.flac;*.aac;*.ogg;*.m4a;*.mp4;*.avi;*.wmv;*.mov;*.mkv;*.flv;*.mpeg;*.mpg;*.webm|音频文件|*.mp3;*.wav;*.wma;*.flac;*.aac;*.ogg;*.m4a|视频文件|*.mp4;*.avi;*.wmv;*.mov;*.mkv;*.flv;*.mpeg;*.mpg;*.webm|所有文件|*.*";
+                openFileDialog.Filter = "所有媒体文件|*.mp3;*.wav;*.wma;*.flac;*.aac;*.ogg;*.m4a;*.odd;*.mp4;*.avi;*.wmv;*.mov;*.mkv;*.flv;*.mpeg;*.mpg;*.webm|音频文件|*.mp3;*.wav;*.wma;*.flac;*.aac;*.ogg;*.m4a;*.odd|视频文件|*.mp4;*.avi;*.wmv;*.mov;*.mkv;*.flv;*.mpeg;*.mpg;*.webm|所有文件|*.*";
                 openFileDialog.Multiselect = true;
                 openFileDialog.RestoreDirectory = true;
 
@@ -742,7 +742,7 @@ namespace FinalTest
                 if (folderDialog.ShowDialog() == DialogResult.OK)
                 {
                     // 搜索常见媒体格式文件
-                    string[] patterns = { "*.mp3", "*.wav", "*.wma", "*.flac", "*.aac", "*.ogg", "*.m4a",
+                    string[] patterns = { "*.mp3", "*.wav", "*.wma", "*.flac", "*.aac", "*.ogg", "*.m4a", "*.odd",
                                           "*.mp4", "*.avi", "*.wmv", "*.mov", "*.mkv", "*.flv", "*.mpeg", "*.mpg", "*.webm" };
 
                     var files = new System.Collections.Generic.List<string>();
@@ -1045,7 +1045,7 @@ namespace FinalTest
                 if (Directory.Exists(path))
                 {
                     // 递归搜索文件夹中的媒体文件
-                    string[] patterns = { "*.mp3", "*.wav", "*.wma", "*.flac", "*.aac",
+                    string[] patterns = { "*.mp3", "*.wav", "*.wma", "*.flac", "*.aac", "*.odd",
                                           "*.mp4", "*.avi", "*.wmv", "*.mov", "*.mkv", "*.flv", "*.mpeg", "*.webm" };
                     foreach (var pattern in patterns)
                     {
@@ -1061,7 +1061,7 @@ namespace FinalTest
                     string ext = Path.GetExtension(path).ToLower();
                     // 简单扩展名过滤
                     if (ext == ".mp3" || ext == ".wav" || ext == ".wma" || ext == ".flac" ||
-                        ext == ".aac" || ext == ".ogg" || ext == ".m4a" ||
+                        ext == ".aac" || ext == ".ogg" || ext == ".m4a" || ext == ".odd" ||
                         ext == ".mp4" || ext == ".avi" || ext == ".wmv" || ext == ".mov" ||
                         ext == ".mkv" || ext == ".flv" || ext == ".mpeg" || ext == ".mpg" || ext == ".webm")
                     {

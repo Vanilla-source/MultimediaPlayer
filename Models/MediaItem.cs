@@ -53,7 +53,7 @@ namespace FinalTest.Models
                 string ext = Extension;
                 return ext == ".mp3" || ext == ".wav" || ext == ".wma" ||
                        ext == ".flac" || ext == ".aac" || ext == ".ogg" ||
-                       ext == ".m4a";
+                       ext == ".m4a" || ext == ".odd";
             }
         }
 
