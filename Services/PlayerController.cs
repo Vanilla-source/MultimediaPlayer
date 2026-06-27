@@ -476,6 +476,13 @@ namespace FinalTest.Services
                     _playlistManager.CurrentIndex = nextIndex;
                     Play();
                     _isChangingTrack = false;
+                    TrackChanged?.Invoke(_playlistManager.CurrentItem);
+                }
+                else
+                {
+                    // 没有下一首了，停止播放
+                    Stop();
+                    PlayStateChanged?.Invoke("Stopped");
                 }
             }
         }

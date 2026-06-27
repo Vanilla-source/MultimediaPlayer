@@ -26,7 +26,8 @@ namespace FinalTest.Models
         /// <summary>
         /// 文件扩展名（如 .mp3、.mp4），用于判断媒体类型
         /// </summary>
-        public string Extension => Path.GetExtension(FilePath)?.ToLower();
+        public string Extension =>
+            string.IsNullOrEmpty(FilePath) ? "" : (Path.GetExtension(FilePath)?.ToLower() ?? "");
 
         /// <summary>
         /// 判断当前文件是否为视频文件
@@ -63,7 +64,7 @@ namespace FinalTest.Models
         public override string ToString()
         {
             return string.IsNullOrEmpty(Title)
-                ? Path.GetFileName(FilePath)
+                ? (string.IsNullOrEmpty(FilePath) ? "(未知)" : Path.GetFileName(FilePath))
                 : Title;
         }
 

@@ -109,14 +109,14 @@ namespace FinalTest
         public MainForm()
         {
             _playerController = new PlayerController();
-            // InitializeComponent() 由 VS 设计器管理，仅包含窗体基本属性
             InitializeComponent();
-            // InitializePlayerUI() 包含所有自定义控件创建，不受设计器影响
             InitializePlayerUI();
             RegisterEvents();
             SetupKeyboardShortcuts();
-            // Form.Load 在窗体显示后触发，此时所有 HWND 已就绪，执行延迟初始化
+            // Form.Load：窗体显示后所有 HWND 就绪，执行延迟初始化
             this.Load += MainForm_Load;
+            // FormClosing：资源清理
+            this.FormClosing += MainForm_FormClosing;
         }
 
         // ==================== 延迟初始化（Form.Load） ====================
@@ -134,10 +134,11 @@ namespace FinalTest
             var wmp = _playerController.WmPlayerControl;
             if (wmp != null)
             {
-                wmp.uiMode = "none";          // 隐藏 WMP 自带 UI
-                wmp.stretchToFit = true;      // 视频拉伸填充
-                wmp.settings.volume = 80;     // 初始音量 80%
-                wmp.settings.mute = false;    // 取消静音
+                // ActiveX 属性设置可能因 COM 状态问题失败，逐个 try 保证程序不崩溃
+                try { wmp.uiMode = "none"; } catch { }
+                try { wmp.stretchToFit = true; } catch { }
+                try { wmp.settings.volume = 80; } catch { }
+                try { wmp.settings.mute = false; } catch { }
             }
         }
 
@@ -231,7 +232,15 @@ namespace FinalTest
             _toolStrip = new ToolStrip();
             _toolStrip.GripStyle = ToolStripGripStyle.Hidden;
 
-            _btnPlay = CreateToolButton("▶ 播放", (s, e) => PlayCurrent());
+            _btnPlay = CreateToolButton("▶ 播放", (s, e) =>
+            {
+                // 如果从未播放过则从第一首开始，否则切换暂停/播放
+                if (_playerController.CurrentPlaylistIndex < 0 && _playerController.PlaylistCount > 0)
+                    _playerController.PlayAtIndex(0);
+                else
+                    _playerController.Pause();      // 暂停/播放切换
+                RefreshPlaylistDisplay();
+            });
             _btnPause = CreateToolButton("⏸ 暂停", (s, e) => _playerController.Pause());
             _btnStop = CreateToolButton("⏹ 停止", (s, e) => _playerController.Stop());
             _btnPrevious = CreateToolButton("⏮ 上一首", (s, e) => _playerController.Previous());
@@ -606,9 +615,9 @@ namespace FinalTest
             _lblAudioTitle.Text = item?.Title ?? "";
             _lblAudioDuration.Text = item?.Duration ?? "00:00";
             // 禁用全屏菜单项（音频无全屏需求）
-            foreach (ToolStripItem item in _playMenu.DropDownItems)
+            foreach (ToolStripItem tsItem in _playMenu.DropDownItems)
             {
-                if (item is ToolStripMenuItem menuItem && menuItem.Text.Contains("全屏"))
+                if (tsItem is ToolStripMenuItem menuItem && menuItem.Text.Contains("全屏"))
                     menuItem.Enabled = false;
             }
         }
@@ -621,9 +630,9 @@ namespace FinalTest
             _videoPanel.BringToFront();
             _audioInfoPanel.Visible = false;
             // 恢复全屏菜单项
-            foreach (ToolStripItem item in _playMenu.DropDownItems)
+            foreach (ToolStripItem tsItem in _playMenu.DropDownItems)
             {
-                if (item is ToolStripMenuItem menuItem && menuItem.Text.Contains("全屏"))
+                if (tsItem is ToolStripMenuItem menuItem && menuItem.Text.Contains("全屏"))
                     menuItem.Enabled = true;
             }
         }
@@ -829,12 +838,21 @@ namespace FinalTest
             {
                 indices.Add(index);
             }
-            // 从后往前删除，避免索引偏移影响
             indices.Sort((a, b) => b.CompareTo(a));
+
+            // 如果要删除的项包含当前播放项，先停止
+            bool removingCurrent = indices.Contains(_playerController.CurrentPlaylistIndex);
 
             foreach (int idx in indices)
             {
                 _playerController.RemoveFromPlaylist(idx);
+            }
+
+            if (removingCurrent)
+            {
+                _playerController.Stop();
+                _lblTrackName.Text = "就绪";
+                this.Text = "多媒体播放器";
             }
 
             RefreshPlaylistDisplay();
@@ -851,26 +869,28 @@ namespace FinalTest
 
             try
             {
+                // 优先使用 WMP 原生的全屏功能
                 wmp.fullScreen = !wmp.fullScreen;
             }
             catch
             {
-                // 若 WMP 全屏不可用，手动模拟
-                if (this.FormBorderStyle == FormBorderStyle.None)
+                // WMP 全屏不可用时手动模拟——不改 FormBorderStyle
+                // 改 FormBorderStyle 会造成句柄重建，销毁 ActiveX 控件
+                if (_menuStrip.Visible)
                 {
-                    this.FormBorderStyle = FormBorderStyle.Sizable;
-                    this.WindowState = FormWindowState.Normal;
-                    _menuStrip.Visible = true;
-                    _toolStrip.Visible = true;
-                    _statusStrip.Visible = true;
-                }
-                else
-                {
-                    this.FormBorderStyle = FormBorderStyle.None;
+                    // 进入全屏：最大化 + 隐藏菜单工具状态栏
                     this.WindowState = FormWindowState.Maximized;
                     _menuStrip.Visible = false;
                     _toolStrip.Visible = false;
                     _statusStrip.Visible = false;
+                }
+                else
+                {
+                    // 退出全屏
+                    this.WindowState = FormWindowState.Normal;
+                    _menuStrip.Visible = true;
+                    _toolStrip.Visible = true;
+                    _statusStrip.Visible = true;
                 }
             }
         }
@@ -1010,8 +1030,8 @@ namespace FinalTest
                         break;
                     case Keys.F11:
                         e.SuppressKeyPress = true;
-                        // 仅视频模式支持全屏
-                        if (_videoPanel.Visible)
+                        // 仅视频模式（音频面板隐藏时）支持全屏
+                        if (!_audioInfoPanel.Visible)
                             ToggleFullscreen();
                         break;
                     case Keys.F1:
@@ -1068,8 +1088,8 @@ namespace FinalTest
                 if (Directory.Exists(path))
                 {
                     // 递归搜索文件夹中的媒体文件
-                    string[] patterns = { "*.mp3", "*.wav", "*.wma", "*.flac", "*.aac", "*.odd",
-                                          "*.mp4", "*.avi", "*.wmv", "*.mov", "*.mkv", "*.flv", "*.mpeg", "*.webm" };
+                    string[] patterns = { "*.mp3", "*.wav", "*.wma", "*.flac", "*.aac", "*.ogg", "*.m4a", "*.odd",
+                                          "*.mp4", "*.avi", "*.wmv", "*.mov", "*.mkv", "*.flv", "*.mpeg", "*.mpg", "*.webm" };
                     foreach (var pattern in patterns)
                     {
                         try
