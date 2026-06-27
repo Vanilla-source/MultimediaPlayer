@@ -134,11 +134,12 @@ namespace FinalTest
             var wmp = _playerController.WmPlayerControl;
             if (wmp != null)
             {
-                // ActiveX 属性设置可能因 COM 状态问题失败，逐个 try 保证程序不崩溃
+                // uiMode 在某些系统可能不支持 "none"，先试；失败则用默认值
                 try { wmp.uiMode = "none"; } catch { }
-                try { wmp.stretchToFit = true; } catch { }
-                try { wmp.settings.volume = 80; } catch { }
-                try { wmp.settings.mute = false; } catch { }
+                // 以下属性在 Load 阶段 HWND 已存在，直接赋值
+                wmp.stretchToFit = true;
+                wmp.settings.volume = 100;      // 音量拉到最大，确保能听到
+                wmp.settings.mute = false;       // 确保未静音
             }
         }
 
@@ -565,6 +566,15 @@ namespace FinalTest
                 {
                     OnPlayModeChanged(mode);
                 }
+            };
+
+            // 媒体错误通知：在状态栏显示提示
+            _playerController.MediaErrorOccurred += (msg) =>
+            {
+                if (this.InvokeRequired)
+                    this.BeginInvoke(new Action(() => _lblTrackName.Text = msg));
+                else
+                    _lblTrackName.Text = msg;
             };
         }
 

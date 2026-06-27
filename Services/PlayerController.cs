@@ -77,6 +77,11 @@ namespace FinalTest.Services
         public event Action<string> PlayStateChanged;
 
         /// <summary>
+        /// 媒体错误事件：文件无法解码时触发，参数为错误描述
+        /// </summary>
+        public event Action<string> MediaErrorOccurred;
+
+        /// <summary>
         /// 进度更新事件：由定时器触发，UI 层订阅以更新进度条
         /// 参数：Item1 = 当前秒数(double), Item2 = 总秒数(double)
         /// </summary>
@@ -234,14 +239,9 @@ namespace FinalTest.Services
             var item = _playlistManager.CurrentItem;
             if (item == null) return;
 
-            // 每次播放前强制确保音量和取消静音
-            // settings.volume 可能在初始化时被 try-catch 静默吞掉，这里兜底
-            try
-            {
-                _wmPlayer.settings.volume = 80;
-                _wmPlayer.settings.mute = false;
-            }
-            catch { }
+            // 每次播放前确保音量正确（不用 try-catch，有问题直接暴露）
+            _wmPlayer.settings.volume = 100;
+            _wmPlayer.settings.mute = false;
 
             // WMP 使用 URL 属性加载媒体文件
             _wmPlayer.URL = item.FilePath;
@@ -466,7 +466,10 @@ namespace FinalTest.Services
         /// </summary>
         private void WmPlayer_MediaError(object sender, AxWMPLib._WMPOCXEvents_MediaErrorEvent e)
         {
-            // 文件出错时跳过当前曲目
+            // 记录出错的文件名
+            string failedFile = _playlistManager.CurrentItem?.Title ?? "未知文件";
+
+            // 文件无法解码（格式不支持、文件损坏等）
             if (!_isChangingTrack && _playlistManager.Count > 0)
             {
                 int nextIndex = _playlistManager.GetNextIndex(_playMode);
@@ -477,12 +480,13 @@ namespace FinalTest.Services
                     Play();
                     _isChangingTrack = false;
                     TrackChanged?.Invoke(_playlistManager.CurrentItem);
+                    MediaErrorOccurred?.Invoke($"已跳过: {failedFile} (格式不支持或文件损坏)");
                 }
                 else
                 {
-                    // 没有下一首了，停止播放
                     Stop();
                     PlayStateChanged?.Invoke("Stopped");
+                    MediaErrorOccurred?.Invoke($"无法播放: {failedFile}，且列表已无下一首");
                 }
             }
         }
