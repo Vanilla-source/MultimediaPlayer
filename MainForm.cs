@@ -99,7 +99,10 @@ namespace FinalTest
         public MainForm()
         {
             _playerController = new PlayerController();
+            // InitializeComponent() 由 VS 设计器管理，仅包含窗体基本属性
             InitializeComponent();
+            // InitializePlayerUI() 包含所有自定义控件创建，不受设计器影响
+            InitializePlayerUI();
             RegisterEvents();
             SetupKeyboardShortcuts();
         }
@@ -117,22 +120,34 @@ namespace FinalTest
         /// </summary>
         private void InitializeComponent()
         {
-            // ---- 窗体基本设置 ----
-            this.Text = "多媒体播放器";
-            this.Size = new Size(1200, 720);
-            this.MinimumSize = new Size(800, 500);
-            this.StartPosition = FormStartPosition.CenterScreen;
-            this.KeyPreview = true; // 启用键盘事件预览
-            this.FormClosing += MainForm_FormClosing;
-            this.AllowDrop = true;
+            this.SuspendLayout();
+            // 
+            // MainForm
+            // 
+            this.ClientSize = new System.Drawing.Size(1831, 925);
+            this.Name = "MainForm";
+            this.ResumeLayout(false);
 
-            // ---- 文件打开对话框 ----
-            // 在 InitializeComponent 中创建以便后续方法使用
-            // (具体实例在事件方法中动态创建)
+        }
 
+        /// <summary>
+        /// 初始化所有自定义播放器 UI 控件（不受 VS 设计器管理）
+        ///
+        /// 设计说明：
+        /// - WinForms 设计器会覆盖 InitializeComponent() 的内容
+        /// - 将所有自定义控件创建独立于此方法，避免被设计器清除
+        /// - 此方法仅在运行时被构造函数调用
+        ///
+        /// 布局设计原则：
+        /// - 菜单栏固定在顶部
+        /// - 工具栏紧跟菜单栏
+        /// - 中间区域使用 SplitContainer 分割为视频区和播放列表区（默认 65:35）
+        /// - 底部状态栏显示播放状态和进度
+        /// </summary>
+        private void InitializePlayerUI()
+        {
             // ========== 菜单栏 ==========
             _menuStrip = new MenuStrip();
-            _menuStrip.Dock = DockStyle.Top;
 
             // 文件菜单
             _fileMenu = new ToolStripMenuItem("文件(&F)");
@@ -176,14 +191,10 @@ namespace FinalTest
                 CreateMenuItem("关于(&A)...", Keys.F1, (s, e) => ShowAbout())
             });
 
-            _menuStrip.Items.AddRange(new ToolStripItem[]
-            {
-                _fileMenu, _playMenu, _modeMenu, _helpMenu
-            });
+            _menuStrip.Items.AddRange(new ToolStripItem[] { _fileMenu, _playMenu, _modeMenu, _helpMenu });
 
             // ========== 工具栏 ==========
             _toolStrip = new ToolStrip();
-            _toolStrip.Dock = DockStyle.Top;
             _toolStrip.GripStyle = ToolStripGripStyle.Hidden;
 
             _btnPlay = CreateToolButton("▶ 播放", (s, e) => PlayCurrent());
@@ -216,7 +227,7 @@ namespace FinalTest
             // ========== 分割容器 ==========
             _splitContainer = new SplitContainer();
             _splitContainer.Dock = DockStyle.Fill;
-            _splitContainer.SplitterDistance = (int)(this.Width * 0.65); // 视频区占 65%
+            _splitContainer.SplitterDistance = (int)(this.ClientSize.Width * 0.65);
 
             // ---- 视频显示面板 ----
             _videoPanel = new Panel();
@@ -226,28 +237,19 @@ namespace FinalTest
             _videoPanel.DragEnter += VideoPanel_DragEnter;
             _videoPanel.DragDrop += VideoPanel_DragDrop;
 
-            // 将 WMP ActiveX 控件（或占位标签）嵌入视频面板
-            // 设计器模式下 WMP COM 互操作程序集尚未生成，WmPlayerControl 为 null
-            // 此时显示占位标签，运行时则嵌入真实的 WMP 控件
+            // WMP ActiveX 控件（或设计器占位标签）
             var wmpControl = _playerController.WmPlayerControl;
             if (wmpControl != null)
             {
-                // 运行时：嵌入真实的 WMP ActiveX 控件
                 wmpControl.Dock = DockStyle.Fill;
-                // 【重要】设置 uiMode 为 "none" 隐藏 WMP 自带 UI，使用自定义控件
                 wmpControl.uiMode = "none";
-                // 启用拉伸以适应窗口
                 wmpControl.stretchToFit = true;
-                // 设置初始音量
                 wmpControl.settings.volume = 50;
-                // 注册右键菜单
                 wmpControl.ContextMenuStrip = CreateVideoContextMenu();
-
                 _videoPanel.Controls.Add(wmpControl);
             }
             else
             {
-                // 设计器模式：显示占位标签，提示用户生成项目后即可正常显示
                 var placeholder = new Label();
                 placeholder.Text = "Windows Media Player 视频区域\n\n请生成项目 (Ctrl+Shift+B) 后\n重新打开窗体设计器";
                 placeholder.Dock = DockStyle.Fill;
@@ -265,7 +267,6 @@ namespace FinalTest
             _playlistPanel.DragEnter += PlaylistPanel_DragEnter;
             _playlistPanel.DragDrop += PlaylistPanel_DragDrop;
 
-            // 列表标题
             _lblPlaylist = new Label();
             _lblPlaylist.Text = "播放列表";
             _lblPlaylist.Font = new Font("Microsoft YaHei", 10F, FontStyle.Bold);
@@ -274,7 +275,6 @@ namespace FinalTest
             _lblPlaylist.TextAlign = ContentAlignment.MiddleLeft;
             _lblPlaylist.Padding = new Padding(5, 0, 0, 0);
 
-            // 播放列表 ListView（详细视图模式）
             _listViewPlaylist = new ListView();
             _listViewPlaylist.Dock = DockStyle.Fill;
             _listViewPlaylist.View = View.Details;
@@ -287,7 +287,6 @@ namespace FinalTest
             _listViewPlaylist.DoubleClick += ListViewPlaylist_DoubleClick;
             _listViewPlaylist.KeyDown += ListViewPlaylist_KeyDown;
 
-            // 定义列
             _colIndex = new ColumnHeader();
             _colIndex.Text = "#";
             _colIndex.Width = 40;
@@ -300,12 +299,8 @@ namespace FinalTest
             _colDuration.Text = "时长";
             _colDuration.Width = 60;
 
-            _listViewPlaylist.Columns.AddRange(new ColumnHeader[]
-            {
-                _colIndex, _colTitle, _colDuration
-            });
+            _listViewPlaylist.Columns.AddRange(new ColumnHeader[] { _colIndex, _colTitle, _colDuration });
 
-            // 操作按钮面板
             var buttonPanel = new Panel();
             buttonPanel.Dock = DockStyle.Bottom;
             buttonPanel.Height = 35;
@@ -328,17 +323,9 @@ namespace FinalTest
             _btnClear.Location = new Point(195, 4);
             _btnClear.Click += (s, e) => ClearPlaylist();
 
-            buttonPanel.Controls.AddRange(new Control[]
-            {
-                _btnAddFiles, _btnRemove, _btnClear
-            });
+            buttonPanel.Controls.AddRange(new Control[] { _btnAddFiles, _btnRemove, _btnClear });
+            _playlistPanel.Controls.AddRange(new Control[] { _lblPlaylist, _listViewPlaylist, buttonPanel });
 
-            _playlistPanel.Controls.AddRange(new Control[]
-            {
-                _lblPlaylist, _listViewPlaylist, buttonPanel
-            });
-
-            // 分配 SplitContainer 面板
             _splitContainer.Panel1.Controls.Add(_videoPanel);
             _splitContainer.Panel2.Controls.Add(_playlistPanel);
 
@@ -347,14 +334,14 @@ namespace FinalTest
 
             _lblTrackName = new ToolStripStatusLabel();
             _lblTrackName.Text = "就绪";
-            _lblTrackName.Spring = true; // 自动填充剩余空间
+            _lblTrackName.Spring = true;
             _lblTrackName.TextAlign = ContentAlignment.MiddleLeft;
 
             _progressBar = new ToolStripProgressBar();
             _progressBar.Size = new Size(200, 16);
             _progressBar.Style = ProgressBarStyle.Continuous;
             _progressBar.Minimum = 0;
-            _progressBar.Maximum = 1000; // 使用 1000 刻度提高精度
+            _progressBar.Maximum = 1000;
             _progressBar.MouseDown += ProgressBar_MouseDown;
             _progressBar.MouseUp += ProgressBar_MouseUp;
             _progressBar.MouseMove += ProgressBar_MouseMove;
@@ -368,17 +355,14 @@ namespace FinalTest
 
             _statusStrip.Items.AddRange(new ToolStripItem[]
             {
-                _lblTrackName,
-                _progressBar,
-                _lblTrackTime,
-                _lblPlayMode
+                _lblTrackName, _progressBar, _lblTrackTime, _lblPlayMode
             });
 
             // ========== 组装主窗体控件 ==========
-            this.Controls.Add(_splitContainer);
-            this.Controls.Add(_toolStrip);
-            this.Controls.Add(_menuStrip);
-            this.Controls.Add(_statusStrip);
+            Controls.Add(_splitContainer);
+            Controls.Add(_toolStrip);
+            Controls.Add(_menuStrip);
+            Controls.Add(_statusStrip);
         }
 
         // ==================== UI 辅助方法 ====================
