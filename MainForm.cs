@@ -51,8 +51,7 @@ namespace FinalTest
         private Control _btnPlay;       // Panel 复合按钮（播放/暂停切换）
         private Control _btnPrevious;
         private Control _btnNext;
-        private Label _lblPlayIcon;      // 播放按钮图标（▶/⏸）
-        private Label _lblPlayText;      // 播放按钮文字（播放/暂停）
+        private Label _lblPlayIcon;      // 播放按钮内 Label（▶\n播放 ↔ ⏸\n暂停）
         private TrackBar _trackBarVolume;
         private Label _lblVolume;
         private Label _lblControlTime;
@@ -393,44 +392,42 @@ namespace FinalTest
             _controlBar.Height = 90;
             _controlBar.BackColor = Color.FromArgb(35, 35, 35);
 
-            int btnW = 82, btnH = 76;                        // 按钮尺寸
-            int top = (_controlBar.Height - btnH) / 2;      // 垂直居中
-            var iconFont = new Font("Segoe UI", 18F, FontStyle.Regular);
-            var textFont = new Font("Microsoft YaHei", 9F);
+            int btnW = 80, btnH = 76;
+            int top = (_controlBar.Height - btnH) / 2;
 
-            // 三个控制按钮：上一首 | 播放/暂停 | 下一首
+            // 三个按钮：单 Label 实现（图标\n文字，无子控件事件转发）
             int x = 20;
-            _btnPrevious = MakeBtn("⏮", "上一首", (s, e) => _playerController.Previous()); SetBtn(ref x, top, btnW);
-            (_btnPlay, _lblPlayIcon) = MakePlayBtn();                                        SetBtn(ref x, top, btnW + 20); // 播放按钮稍大
-            _btnNext     = MakeBtn("⏭", "下一首", (s, e) => _playerController.Next());      SetBtn(ref x, top, btnW);
+            _btnPrevious = MakeBtn("⏮\n上一首", (s, e) => _playerController.Previous(), btnW, top);
+            _lblPlayIcon = new Label(); // 初始占位，下面覆盖
+            _btnPlay     = MakeBtn("▶\n播放", (s, e) => BtnPlay_Click(), btnW + 20, top);
+            // 取回播放按钮内部的 Label 引用用于状态切换
+            _lblPlayIcon = (Label)_btnPlay.Controls[0];
+            _btnNext     = MakeBtn("⏭\n下一首", (s, e) => _playerController.Next(), btnW, top);
 
-            x += 14; // 分隔间距
-
-            // 音量区
+            x += 10;
             _lblVolume = new Label
             {
                 Text = "🔊", ForeColor = Color.LightGray, Font = new Font("Segoe UI", 11F),
-                Size = new Size(28, 22), Location = new Point(x, top + btnH / 2 - 14),
+                Size = new Size(28, 22), Location = new Point(x, top + 28),
                 TextAlign = ContentAlignment.MiddleCenter
             };
-            x += 30;
+            x += 32;
             _trackBarVolume = new TrackBar
             {
                 Minimum = 0, Maximum = 100, Value = 80, TickStyle = TickStyle.None,
-                Size = new Size(140, 22), Location = new Point(x, top + btnH / 2 - 10),
+                Size = new Size(140, 22), Location = new Point(x, top + 28),
                 BackColor = Color.FromArgb(35, 35, 35)
             };
             _trackBarVolume.Scroll += (s, e) => _playerController.Volume = _trackBarVolume.Value;
 
-            // 时间显示（靠右）
             _lblControlTime = new Label
             {
                 Text = "00:00 / 00:00", ForeColor = Color.Silver,
                 Font = new Font("Consolas", 11F), AutoSize = true,
                 TextAlign = ContentAlignment.MiddleRight,
-                Location = new Point(_controlBar.Width - 210, top + btnH / 2 - 10)
+                Location = new Point(_controlBar.Width - 210, top + 25),
+                Anchor = AnchorStyles.Right
             };
-            _lblControlTime.Anchor = AnchorStyles.Right;
 
             _controlBar.Controls.AddRange(new Control[]
             {
@@ -438,53 +435,28 @@ namespace FinalTest
                 _lblVolume, _trackBarVolume, _lblControlTime
             });
 
-            // --- 本地辅助函数 ---
-            Panel MakeBtn(string icon, string label, EventHandler click)
+            // --- 本地辅助：创建复合按钮（Panel 包一个 Label，图标\n文字） ---
+            Control MakeBtn(string text, EventHandler click, int w, int y)
             {
-                var (p, _, _) = MakeBtnCore(icon, label, click, btnW);
-                return p;
-            }
-
-            (Panel panel, Label iconLbl, Label textLbl) MakePlayBtn()
-            {
-                var (p, i, t) = MakeBtnCore("▶", "播放", (s, e) => BtnPlay_Click(), btnW + 20);
-                return (p, i, t);
-            }
-
-            (Panel, Label, Label) MakeBtnCore(string icon, string label, EventHandler click, int w)
-            {
-                var p = new Panel { Width = w, Height = btnH, Cursor = Cursors.Hand };
-                var lblIcon = new Label
+                var p = new Panel { Width = w, Height = btnH, Location = new Point(x, y),
+                                    Cursor = Cursors.Hand, BackColor = Color.FromArgb(50, 50, 50) };
+                var lbl = new Label
                 {
-                    Text = icon, Font = iconFont, ForeColor = Color.White,
-                    TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Top, Height = 42
+                    Text = text, Font = new Font("Microsoft YaHei", 10F, FontStyle.Bold),
+                    ForeColor = Color.White, TextAlign = ContentAlignment.MiddleCenter,
+                    Dock = DockStyle.Fill
                 };
-                var lblText = new Label
-                {
-                    Text = label, Font = textFont, ForeColor = Color.FromArgb(180, 180, 180),
-                    TextAlign = ContentAlignment.MiddleCenter, Dock = DockStyle.Fill
-                };
-                p.Controls.Add(lblText);
-                p.Controls.Add(lblIcon);
-
-                var originalColor = Color.FromArgb(50, 50, 50);
-                p.BackColor = originalColor;
-                p.MouseEnter += (s, e) => p.BackColor = Color.FromArgb(0, 110, 210);
-                p.MouseLeave += (s, e) => p.BackColor = originalColor;
-                p.MouseDown  += (s, e) => p.BackColor = Color.FromArgb(0, 75, 150);
-                lblIcon.MouseEnter = p.MouseEnter; lblIcon.MouseLeave = p.MouseLeave; lblIcon.MouseDown = p.MouseDown;
-                lblText.MouseEnter = p.MouseEnter; lblText.MouseLeave = p.MouseLeave; lblText.MouseDown = p.MouseDown;
+                p.Controls.Add(lbl);
                 p.Click += (s, e) => click(s, e);
-                lblIcon.Click += (s, e) => click(s, e);
-                lblText.Click += (s, e) => click(s, e);
+                lbl.Click += (s, e) => click(s, e);
+                p.MouseEnter += (s, e) => p.BackColor = Color.FromArgb(0, 110, 210);
+                p.MouseLeave += (s, e) => p.BackColor = Color.FromArgb(50, 50, 50);
+                lbl.MouseEnter += (s, e) => p.BackColor = Color.FromArgb(0, 110, 210);
+                lbl.MouseLeave += (s, e) => p.BackColor = Color.FromArgb(50, 50, 50);
 
-                return (p, lblIcon, lblText);
-            }
-
-            void SetBtn(ref int xPos, int y, int w)
-            {
-                _controlBar.Controls[_controlBar.Controls.Count - 1].Location = new Point(xPos, y);
-                xPos += w + 8;
+                _controlBar.Controls.Add(p);
+                x += w + 8;
+                return p;
             }
         }
 
@@ -691,8 +663,7 @@ namespace FinalTest
         private void OnPlayStateChanged(string state)
         {
             bool playing = state == "Playing";
-            if (_lblPlayIcon != null) _lblPlayIcon.Text = playing ? "⏸" : "▶";
-            if (_lblPlayText != null) _lblPlayText.Text = playing ? "暂停" : "播放";
+            if (_lblPlayIcon != null) _lblPlayIcon.Text = playing ? "⏸\n暂停" : "▶\n播放";
         }
 
         /// <summary>
