@@ -153,25 +153,25 @@ namespace FinalTest
             _fileMenu = new ToolStripMenuItem("文件(&F)");
             _fileMenu.DropDownItems.AddRange(new ToolStripItem[]
             {
-                CreateMenuItem("打开文件(&O)...", Keys.Control | Keys.O, (s, e) => OpenMediaFiles()),
-                CreateMenuItem("添加文件夹(&D)...", Keys.Control | Keys.D, (s, e) => AddFolder()),
+                CreateMenuItem("打开文件(&O)...", (s, e) => OpenMediaFiles()),
+                CreateMenuItem("添加文件夹(&D)...", (s, e) => AddFolder()),
                 new ToolStripSeparator(),
-                CreateMenuItem("清空播放列表(&C)", Keys.Control | Keys.L, (s, e) => ClearPlaylist()),
+                CreateMenuItem("清空播放列表(&C)", (s, e) => ClearPlaylist()),
                 new ToolStripSeparator(),
-                CreateMenuItem("退出(&X)", Keys.Alt | Keys.F4, (s, e) => Close())
+                CreateMenuItem("退出(&X)", (s, e) => Close())
             });
 
             // 播放菜单
             _playMenu = new ToolStripMenuItem("播放(&P)");
             _playMenu.DropDownItems.AddRange(new ToolStripItem[]
             {
-                CreateMenuItem("播放/暂停(&P)", Keys.Space, (s, e) => _playerController.Pause()),
-                CreateMenuItem("停止(&S)", Keys.Control | Keys.S, (s, e) => _playerController.Stop()),
+                CreateMenuItem("播放/暂停", (s, e) => _playerController.Pause()),
+                CreateMenuItem("停止(&S)", (s, e) => _playerController.Stop()),
                 new ToolStripSeparator(),
-                CreateMenuItem("上一首(&B)", Keys.Control | Keys.Left, (s, e) => _playerController.Previous()),
-                CreateMenuItem("下一首(&N)", Keys.Control | Keys.Right, (s, e) => _playerController.Next()),
+                CreateMenuItem("上一首(&B)", (s, e) => _playerController.Previous()),
+                CreateMenuItem("下一首(&N)", (s, e) => _playerController.Next()),
                 new ToolStripSeparator(),
-                CreateMenuItem("全屏(&F)", Keys.F11, (s, e) => ToggleFullscreen())
+                CreateMenuItem("全屏(&F)", (s, e) => ToggleFullscreen())
             });
 
             // 模式菜单
@@ -188,7 +188,7 @@ namespace FinalTest
             _helpMenu = new ToolStripMenuItem("帮助(&H)");
             _helpMenu.DropDownItems.AddRange(new ToolStripItem[]
             {
-                CreateMenuItem("关于(&A)...", Keys.F1, (s, e) => ShowAbout())
+                CreateMenuItem("关于(&A)...", (s, e) => ShowAbout())
             });
 
             _menuStrip.Items.AddRange(new ToolStripItem[] { _fileMenu, _playMenu, _modeMenu, _helpMenu });
@@ -368,12 +368,11 @@ namespace FinalTest
         // ==================== UI 辅助方法 ====================
 
         /// <summary>
-        /// 创建带快捷键的菜单项
+        /// 创建菜单项（快捷键统一通过 KeyDown 事件处理，避免 ShortcutKeys 属性的兼容性问题）
         /// </summary>
-        private ToolStripMenuItem CreateMenuItem(string text, Keys shortcutKeys, EventHandler onClick)
+        private ToolStripMenuItem CreateMenuItem(string text, EventHandler onClick)
         {
             var item = new ToolStripMenuItem(text);
-            item.ShortcutKeys = shortcutKeys;
             item.Click += onClick;
             return item;
         }
@@ -834,24 +833,66 @@ namespace FinalTest
 
         /// <summary>
         /// 设置全局键盘快捷键
-        /// 通过 KeyPreview = true 在窗体级别捕获按键
+        /// 全部快捷键通过 KeyDown 事件处理，避免 ToolStripMenuItem.ShortcutKeys
+        /// 在手动创建菜单时的兼容性问题（如 Keys.Space 抛异常）。
         /// </summary>
         private void SetupKeyboardShortcuts()
         {
             this.KeyDown += (s, e) =>
             {
+                // Ctrl 组合键
+                if (e.Control)
+                {
+                    switch (e.KeyCode)
+                    {
+                        case Keys.O:
+                            e.SuppressKeyPress = true;
+                            OpenMediaFiles();
+                            break;
+                        case Keys.D:
+                            e.SuppressKeyPress = true;
+                            AddFolder();
+                            break;
+                        case Keys.L:
+                            e.SuppressKeyPress = true;
+                            ClearPlaylist();
+                            break;
+                        case Keys.S:
+                            e.SuppressKeyPress = true;
+                            _playerController.Stop();
+                            break;
+                        case Keys.Left:
+                            e.SuppressKeyPress = true;
+                            _playerController.Previous();
+                            break;
+                        case Keys.Right:
+                            e.SuppressKeyPress = true;
+                            _playerController.Next();
+                            break;
+                    }
+                    return;
+                }
+
+                // 单键
                 switch (e.KeyCode)
                 {
                     case Keys.Space:
-                        e.SuppressKeyPress = true; // 防止触发按钮焦点变化
+                        e.SuppressKeyPress = true;
                         _playerController.Pause();
                         break;
                     case Keys.Escape:
-                        // 退出全屏
                         if (this.FormBorderStyle == FormBorderStyle.None)
                         {
                             ToggleFullscreen();
                         }
+                        break;
+                    case Keys.F11:
+                        e.SuppressKeyPress = true;
+                        ToggleFullscreen();
+                        break;
+                    case Keys.F1:
+                        e.SuppressKeyPress = true;
+                        ShowAbout();
                         break;
                 }
             };
