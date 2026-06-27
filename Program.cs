@@ -1,22 +1,24 @@
 using System;
 using System.Windows.Forms;
+using LibVLCSharp.Shared;
 
 namespace FinalTest
 {
-    /// <summary>
-    /// 应用程序入口类
-    /// </summary>
     internal static class Program
     {
         /// <summary>
-        /// 应用程序的主入口点。
-        /// 启用视觉样式并启动主窗体 MainForm。
+        /// 应用程序主入口点。
+        /// 初始化 VLC 引擎并启动主窗体。
         /// </summary>
         [STAThread]
         static void Main()
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+
+            // 初始化 VLC 原生库（加载 libvlc.dll）
+            Core.Initialize();
+
             Application.Run(new MainForm());
         }
     }

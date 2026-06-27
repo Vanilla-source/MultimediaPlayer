@@ -4,6 +4,7 @@ using System.IO;
 using System.Windows.Forms;
 using FinalTest.Models;
 using FinalTest.Services;
+using LibVLCSharp.WinForms;
 
 namespace FinalTest
 {
@@ -130,17 +131,7 @@ namespace FinalTest
             // 1. 根据实际窗体大小计算 SplitContainer 分割比例（构造时 ClientSize 不准确）
             _splitContainer.SplitterDistance = (int)(this.ClientSize.Width * 0.65);
 
-            // 2. 初始化 WMP ActiveX 控件的 COM 属性（需要有效 HWND）
-            var wmp = _playerController.WmPlayerControl;
-            if (wmp != null)
-            {
-                // uiMode 在某些系统可能不支持 "none"，先试；失败则用默认值
-                try { wmp.uiMode = "none"; } catch { }
-                // 以下属性在 Load 阶段 HWND 已存在，直接赋值
-                wmp.stretchToFit = true;
-                wmp.settings.volume = 100;      // 音量拉到最大，确保能听到
-                wmp.settings.mute = false;       // 确保未静音
-            }
+            // VLC 引擎已在 PlayerController 构造时初始化，无需额外设置
         }
 
         // ==================== UI 初始化 ====================
@@ -281,33 +272,12 @@ namespace FinalTest
             _videoPanel.DragEnter += VideoPanel_DragEnter;
             _videoPanel.DragDrop += VideoPanel_DragDrop;
 
-            // WMP ActiveX 控件（或设计器占位标签）
-            // 【关键】必须先 Add 到父容器（创建窗口句柄），再设置 COM 属性
-            // ActiveX 控件需要有效的 HWND 才能响应 uiMode/stretchToFit 等属性写入
-            var wmpControl = _playerController.WmPlayerControl;
-            if (wmpControl != null)
-            {
-                // 步骤1：先设置 .NET 托管属性（不需要 HWND）
-                wmpControl.Dock = DockStyle.Fill;
-                wmpControl.ContextMenuStrip = CreateVideoContextMenu();
-
-                // 步骤2：添加到父容器
-                _videoPanel.Controls.Add(wmpControl);
-
-                // 【重要】uiMode/stretchToFit/volume 等 COM 属性需要 HWND
-                // 在构造阶段 HWND 未创建，一律推迟到 Form.Load 事件处理
-            }
-            else
-            {
-                var placeholder = new Label();
-                placeholder.Text = "Windows Media Player 视频区域\n\n请生成项目 (Ctrl+Shift+B) 后\n重新打开窗体设计器";
-                placeholder.Dock = DockStyle.Fill;
-                placeholder.TextAlign = ContentAlignment.MiddleCenter;
-                placeholder.ForeColor = Color.Gray;
-                placeholder.Font = new Font("Microsoft YaHei", 11F);
-                placeholder.BackColor = Color.Black;
-                _videoPanel.Controls.Add(placeholder);
-            }
+            // VLC VideoView 控件（替换原 WMP ActiveX，无 COM 互操作问题）
+            var videoView = new VideoView();
+            videoView.Dock = DockStyle.Fill;
+            videoView.MediaPlayer = _playerController.MediaPlayer;
+            videoView.ContextMenuStrip = CreateVideoContextMenu();
+            _videoPanel.Controls.Add(videoView);
 
             // ---- 播放列表面板 ----
             _playlistPanel = new Panel();
@@ -494,16 +464,16 @@ namespace FinalTest
             var menu = new ContextMenuStrip();
             menu.Items.Add("全屏", null, (s, e) => ToggleFullscreen());
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("画面比例 4:3", null, (s, e) =>
+            menu.Items.Add("画面比例 4:3", null, (s, e =>
             {
-                if (_playerController.WmPlayerControl != null)
-                    _playerController.WmPlayerControl.stretchToFit = false;
-            });
-            menu.Items.Add("拉伸填充", null, (s, e) =>
+                if (_playerController.MediaPlayer != null)
+                    _playerController.MediaPlayer.Scale = 0;
+            }));
+            menu.Items.Add("拉伸填充", null, (s, e =>
             {
-                if (_playerController.WmPlayerControl != null)
-                    _playerController.WmPlayerControl.stretchToFit = true;
-            });
+                if (_playerController.MediaPlayer != null)
+                    _playerController.MediaPlayer.Scale = 1;
+            }));
             return menu;
         }
 
@@ -874,34 +844,20 @@ namespace FinalTest
         /// </summary>
         private void ToggleFullscreen()
         {
-            var wmp = _playerController.WmPlayerControl;
-            if (wmp == null) return;
-
-            try
+            // 手动模拟全屏：最大化窗口 + 隐藏菜单/工具栏/状态栏
+            if (_menuStrip.Visible)
             {
-                // 优先使用 WMP 原生的全屏功能
-                wmp.fullScreen = !wmp.fullScreen;
+                this.WindowState = FormWindowState.Maximized;
+                _menuStrip.Visible = false;
+                _toolStrip.Visible = false;
+                _statusStrip.Visible = false;
             }
-            catch
+            else
             {
-                // WMP 全屏不可用时手动模拟——不改 FormBorderStyle
-                // 改 FormBorderStyle 会造成句柄重建，销毁 ActiveX 控件
-                if (_menuStrip.Visible)
-                {
-                    // 进入全屏：最大化 + 隐藏菜单工具状态栏
-                    this.WindowState = FormWindowState.Maximized;
-                    _menuStrip.Visible = false;
-                    _toolStrip.Visible = false;
-                    _statusStrip.Visible = false;
-                }
-                else
-                {
-                    // 退出全屏
-                    this.WindowState = FormWindowState.Normal;
-                    _menuStrip.Visible = true;
-                    _toolStrip.Visible = true;
-                    _statusStrip.Visible = true;
-                }
+                this.WindowState = FormWindowState.Normal;
+                _menuStrip.Visible = true;
+                _toolStrip.Visible = true;
+                _statusStrip.Visible = true;
             }
         }
 

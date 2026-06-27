@@ -2,389 +2,206 @@ using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
 using FinalTest.Models;
+using LibVLCSharp.Shared;
 
 namespace FinalTest.Services
 {
     /// <summary>
-    /// 播放器控制器
-    /// 封装 Windows Media Player ActiveX 控件，提供统一的播放控制接口
+    /// 播放器控制器 — 基于 LibVLCSharp（替代原 Windows Media Player COM 方案）
     ///
-    /// 设计思路：
-    /// - 采用外观模式（Facade），将 WMP COM 控件的复杂接口封装为简单的播放控制方法
-    /// - 通过 PlaylistManager 获取下一首/上一首，实现自动切歌
-    /// - 使用 Timer 定时更新播放进度，驱动 UI 进度条刷新
-    /// - 通过事件机制通知 UI 层状态变化（曲目切换、播放状态变化、进度更新）
+    /// 为什么换 VLC：
+    /// - WMP COM 依赖系统 DirectShow 解码器，不支持 .odd 等非标格式
+    /// - ActiveX 的 uiMode/HWND/COM 封送在手动 WinForms 中极不稳定
+    /// - VLC 内置 FFmpeg 解码库，原生支持 500+ 音视频格式（包括 .odd）
+    /// - VLC 是纯 .NET 托管 API，没有 COM 互操作的脆弱性
     ///
-    /// 核心实现逻辑：
-    /// - PlayStateChange 事件监听 WMP 播放状态，当媒体播放完毕（MediaEnded）时自动切歌
-    /// - 切歌逻辑根据 PlayMode 决定下一首索引，索引为 -1 则停止播放
-    /// - 音量映射：WMP 音量范围为 0-100（整数），与 UI 滑块 0-100 直接对应
-    ///
-    /// 设计器兼容：
-    /// - _wmPlayer 可能为 null（VS 设计器加载时 COM 互操作程序集尚未生成）
-    /// - 所有访问 _wmPlayer 的方法均使用 null 条件操作符保护
-    /// - 通过 IsWmpAvailable 属性让 UI 层判断是否处于设计器模式
+    /// 设计思路（不变）：
+    /// - 外观模式封装播放引擎
+    /// - PlaylistManager 管理列表与导航
+    /// - Timer 驱动进度更新
+    /// - 事件通知 UI 层
     /// </summary>
     public class PlayerController : IDisposable
     {
-        // ==================== 私有字段 ====================
+        // ==================== 核心引擎 ====================
+        private readonly LibVLC _libVLC;
+        private readonly MediaPlayer _mediaPlayer;
 
-        /// <summary>
-        /// Windows Media Player ActiveX 控件实例
-        /// 设计器模式下可能为 null（COM 互操作程序集尚未生成）
-        /// uiMode 设置为 "none" 以隐藏 WMP 自带 UI，使用自定义控件
-        /// </summary>
-        private readonly AxWMPLib.AxWindowsMediaPlayer _wmPlayer;
-
-        /// <summary>
-        /// 播放列表管理器引用
-        /// </summary>
+        // ==================== 业务组件 ====================
         private readonly PlaylistManager _playlistManager;
-
-        /// <summary>
-        /// 当前播放模式
-        /// </summary>
         private PlayMode _playMode;
 
-        /// <summary>
-        /// 进度更新定时器
-        /// 每 500ms 触发一次，驱动进度条和时间显示更新
-        /// </summary>
+        // ==================== 定时器 ====================
         private readonly Timer _progressTimer;
 
-        /// <summary>
-        /// 标记是否正在执行切歌操作（防止递归触发）
-        /// </summary>
+        // ==================== 状态标志 ====================
         private bool _isChangingTrack;
-
-        /// <summary>
-        /// 标记资源是否已释放
-        /// </summary>
         private bool _disposed;
 
         // ==================== 事件 ====================
-
-        /// <summary>
-        /// 曲目切换事件：当播放曲目发生变化时触发
-        /// 参数为新的 MediaItem（可能为 null 表示无曲目）
-        /// </summary>
         public event Action<MediaItem> TrackChanged;
-
-        /// <summary>
-        /// 播放状态变化事件：播放/暂停/停止时触发
-        /// 参数为 WMP 播放状态枚举字符串
-        /// </summary>
         public event Action<string> PlayStateChanged;
-
-        /// <summary>
-        /// 媒体错误事件：文件无法解码时触发，参数为错误描述
-        /// </summary>
-        public event Action<string> MediaErrorOccurred;
-
-        /// <summary>
-        /// 进度更新事件：由定时器触发，UI 层订阅以更新进度条
-        /// 参数：Item1 = 当前秒数(double), Item2 = 总秒数(double)
-        /// </summary>
         public event Action<double, double> ProgressUpdated;
-
-        /// <summary>
-        /// 播放模式变化事件
-        /// </summary>
         public event Action<PlayMode> PlayModeChanged;
+        public event Action<string> MediaErrorOccurred;
 
         // ==================== 属性 ====================
 
-        /// <summary>
-        /// 判断 WMP ActiveX 控件是否可用
-        /// 运行时始终为 true；VS 设计器加载时可能为 false
-        /// </summary>
-        public bool IsWmpAvailable => _wmPlayer != null;
+        /// <summary>VLC 媒体播放器实例（供 VideoView 绑定）</summary>
+        public MediaPlayer MediaPlayer => _mediaPlayer;
 
-        /// <summary>
-        /// 获取底层 WMP 控件引用（供 MainForm 添加到窗体控件树）
-        /// 设计器模式下可能返回 null
-        /// </summary>
-        public AxWMPLib.AxWindowsMediaPlayer WmPlayerControl => _wmPlayer;
-
-        /// <summary>
-        /// 获取当前播放的媒体项
-        /// </summary>
         public MediaItem CurrentTrack => _playlistManager.CurrentItem;
 
-        /// <summary>
-        /// 获取或设置当前播放模式
-        /// 设置时会触发 PlayModeChanged 事件
-        /// </summary>
         public PlayMode CurrentPlayMode
         {
             get => _playMode;
-            set
-            {
-                if (_playMode != value)
-                {
-                    _playMode = value;
-                    PlayModeChanged?.Invoke(_playMode);
-                }
-            }
+            set { if (_playMode != value) { _playMode = value; PlayModeChanged?.Invoke(_playMode); } }
         }
 
-        /// <summary>
-        /// 判断播放器当前是否正在播放
-        /// </summary>
-        public bool IsPlaying =>
-            _wmPlayer != null && _wmPlayer.playState == WMPLib.WMPPlayState.wmppsPlaying;
+        public bool IsPlaying => _mediaPlayer.IsPlaying;
 
-        /// <summary>
-        /// 获取当前播放进度（秒）
-        /// </summary>
         public double CurrentPosition =>
-            _wmPlayer?.Ctlcontrols.currentPosition ?? 0;
+            _mediaPlayer.Time >= 0 ? TimeSpan.FromMilliseconds(_mediaPlayer.Time).TotalSeconds : 0;
 
-        /// <summary>
-        /// 获取当前媒体总时长（秒）
-        /// </summary>
         public double Duration =>
-            _wmPlayer?.currentMedia?.duration ?? 0;
+            _mediaPlayer.Length > 0 ? TimeSpan.FromMilliseconds(_mediaPlayer.Length).TotalSeconds : 0;
 
-        /// <summary>
-        /// 获取或设置音量（0-100）
-        /// </summary>
         public int Volume
         {
-            get => _wmPlayer?.settings.volume ?? 50;
-            set
-            {
-                if (_wmPlayer != null)
-                    _wmPlayer.settings.volume = Math.Max(0, Math.Min(100, value));
-            }
+            get => _mediaPlayer.Volume;
+            set => _mediaPlayer.Volume = Math.Max(0, Math.Min(100, value));
         }
 
-        /// <summary>
-        /// 获取当前播放列表项数
-        /// </summary>
         public int PlaylistCount => _playlistManager.Count;
-
-        /// <summary>
-        /// 获取当前播放列表索引
-        /// </summary>
         public int CurrentPlaylistIndex => _playlistManager.CurrentIndex;
-
-        /// <summary>
-        /// 获取只读播放列表
-        /// </summary>
         public IReadOnlyList<MediaItem> PlaylistItems => _playlistManager.Items;
 
         // ==================== 构造函数 ====================
 
-        /// <summary>
-        /// 初始化播放器控制器
-        /// 创建 WMP 控件、播放列表管理器、进度定时器，并注册事件
-        ///
-        /// 设计器安全：
-        /// - WMP ActiveX 控件创建包装在 try-catch 中
-        /// - 若 COM 互操作程序集不可用（设计器首次加载），_wmPlayer 保持为 null
-        /// - 所有 WMP 相关操作通过 null 条件操作符安全降级
-        /// </summary>
         public PlayerController()
         {
-            // 尝试创建 WMP ActiveX 控件
-            // 设计器模式下 COM 互操作程序集尚未生成，创建会失败
-            try
-            {
-                _wmPlayer = new AxWMPLib.AxWindowsMediaPlayer();
-                _wmPlayer.Enabled = true;
-            }
-            catch (Exception)
-            {
-                // 设计器模式：COM 互操作程序集尚未生成，_wmPlayer 保持为 null
-                // 运行时：正常安装的系统不会进入此分支
-                _wmPlayer = null;
-            }
+            // 初始化 VLC 引擎（与操作系统匹配的架构）
+            _libVLC = new LibVLC();
+            _mediaPlayer = new MediaPlayer(_libVLC);
 
-            // 初始化播放列表管理器
             _playlistManager = new PlaylistManager();
-
-            // 默认播放模式：顺序播放
             _playMode = PlayMode.Sequential;
 
-            // 初始化进度定时器：每 500ms 更新一次
-            _progressTimer = new Timer();
-            _progressTimer.Interval = 500;
+            // 进度定时器
+            _progressTimer = new Timer { Interval = 500 };
             _progressTimer.Tick += ProgressTimer_Tick;
 
-            _isChangingTrack = false;
-
-            // 注册 WMP 事件（仅当 WMP 可用时）
-            if (_wmPlayer != null)
-            {
-                _wmPlayer.PlayStateChange += WmPlayer_PlayStateChange;
-                _wmPlayer.MediaError += WmPlayer_MediaError;
-            }
+            // 注册 VLC 事件
+            _mediaPlayer.Playing += (s, e) => { PlayStateChanged?.Invoke("Playing"); };
+            _mediaPlayer.Paused += (s, e) => { _progressTimer.Stop(); PlayStateChanged?.Invoke("Paused"); };
+            _mediaPlayer.Stopped += (s, e) => { _progressTimer.Stop(); PlayStateChanged?.Invoke("Stopped"); };
+            _mediaPlayer.EndReached += MediaPlayer_EndReached;
+            _mediaPlayer.EncounteredError += MediaPlayer_EncounteredError;
         }
 
-        // ==================== 播放控制方法 ====================
+        // ==================== 播放控制 ====================
 
-        /// <summary>
-        /// 播放当前选中的媒体文件
-        /// 实现逻辑：
-        /// 1. 获取当前 MediaItem
-        /// 2. 将文件 URL 设置给 WMP 控件
-        /// 3. 调用 WMP 的 Ctlcontrols.play() 开始播放
-        /// 4. 启动进度更新定时器
-        /// </summary>
         public void Play()
         {
-            if (_wmPlayer == null) return;
-
             var item = _playlistManager.CurrentItem;
             if (item == null) return;
 
-            // 每次播放前确保音量正确（不用 try-catch，有问题直接暴露）
-            _wmPlayer.settings.volume = 100;
-            _wmPlayer.settings.mute = false;
-
-            // WMP 使用 URL 属性加载媒体文件
-            _wmPlayer.URL = item.FilePath;
-            _wmPlayer.Ctlcontrols.play();
-
-            // 启动进度更新定时器
+            _mediaPlayer.Volume = 100;
+            var media = new Media(_libVLC, new Uri(item.FilePath));
+            _mediaPlayer.Play(media);
             _progressTimer.Start();
         }
 
-        /// <summary>
-        /// 暂停/继续播放切换
-        /// </summary>
-        public void Pause()
-        {
-            if (_wmPlayer == null) return;
+        public void Pause() { _mediaPlayer.Pause(); }
+        public void Stop() { _mediaPlayer.Stop(); _progressTimer.Stop(); }
 
-            if (_wmPlayer.playState == WMPLib.WMPPlayState.wmppsPlaying)
-            {
-                _wmPlayer.Ctlcontrols.pause();
-                _progressTimer.Stop();
-            }
-            else if (_wmPlayer.playState == WMPLib.WMPPlayState.wmppsPaused)
-            {
-                _wmPlayer.Ctlcontrols.play();
-                _progressTimer.Start();
-            }
-        }
-
-        /// <summary>
-        /// 停止播放
-        /// 停止后关闭进度更新定时器
-        /// </summary>
-        public void Stop()
-        {
-            if (_wmPlayer != null)
-            {
-                _wmPlayer.Ctlcontrols.stop();
-            }
-            _progressTimer.Stop();
-        }
-
-        /// <summary>
-        /// 播放下一首
-        /// 实现逻辑：
-        /// 1. 通过 PlaylistManager 获取下一首索引
-        /// 2. 若索引为 -1（顺序模式到末尾），停止播放
-        /// 3. 否则切换当前索引并调用 Play()
-        /// </summary>
         public void Next()
         {
-            int nextIndex = _playlistManager.GetNextIndex(_playMode);
-            if (nextIndex < 0)
-            {
-                Stop();
-                return;
-            }
-
-            _isChangingTrack = true;
-            _playlistManager.CurrentIndex = nextIndex;
-            Play();
-            _isChangingTrack = false;
-
-            TrackChanged?.Invoke(_playlistManager.CurrentItem);
+            int idx = _playlistManager.GetNextIndex(_playMode);
+            if (idx < 0) { Stop(); return; }
+            SwitchTo(idx);
         }
 
-        /// <summary>
-        /// 播放上一首
-        /// 逻辑与 Next() 对称
-        /// </summary>
         public void Previous()
         {
-            int prevIndex = _playlistManager.GetPreviousIndex(_playMode);
-            if (prevIndex < 0)
-            {
-                Stop();
-                return;
-            }
-
-            _isChangingTrack = true;
-            _playlistManager.CurrentIndex = prevIndex;
-            Play();
-            _isChangingTrack = false;
-
-            TrackChanged?.Invoke(_playlistManager.CurrentItem);
+            int idx = _playlistManager.GetPreviousIndex(_playMode);
+            if (idx < 0) { Stop(); return; }
+            SwitchTo(idx);
         }
 
-        /// <summary>
-        /// 跳转到播放列表中的指定索引并开始播放
-        /// </summary>
-        /// <param name="index">目标索引</param>
         public void PlayAtIndex(int index)
         {
             if (index < 0 || index >= _playlistManager.Count) return;
+            SwitchTo(index);
+        }
 
+        public void Seek(double seconds)
+        {
+            if (_mediaPlayer.Length > 0)
+                _mediaPlayer.Time = (long)(seconds * 1000);
+        }
+
+        // ==================== 切歌逻辑 ====================
+
+        private void SwitchTo(int index)
+        {
             _isChangingTrack = true;
             _playlistManager.CurrentIndex = index;
             Play();
             _isChangingTrack = false;
-
             TrackChanged?.Invoke(_playlistManager.CurrentItem);
         }
 
-        /// <summary>
-        /// 跳转到指定播放位置
-        /// </summary>
-        /// <param name="seconds">目标位置（秒）</param>
-        public void Seek(double seconds)
+        // ==================== VLC 事件 ====================
+
+        private void MediaPlayer_EndReached(object sender, EventArgs e)
         {
-            if (_wmPlayer?.currentMedia != null)
+            if (!_isChangingTrack)
             {
-                _wmPlayer.Ctlcontrols.currentPosition = seconds;
+                int idx = _playlistManager.GetNextIndex(_playMode);
+                if (idx < 0) { Stop(); PlayStateChanged?.Invoke("Stopped"); }
+                else SwitchTo(idx);
             }
         }
 
-        // ==================== 播放列表操作方法 ====================
-
-        /// <summary>
-        /// 向播放列表添加文件
-        /// </summary>
-        public void AddToPlaylist(string filePath)
+        private void MediaPlayer_EncounteredError(object sender, EventArgs e)
         {
-            _playlistManager.Add(filePath);
+            string failed = _playlistManager.CurrentItem?.Title ?? "未知文件";
+            if (!_isChangingTrack && _playlistManager.Count > 0)
+            {
+                int idx = _playlistManager.GetNextIndex(_playMode);
+                if (idx >= 0)
+                {
+                    SwitchTo(idx);
+                    MediaErrorOccurred?.Invoke($"已跳过: {failed}（无法解码）");
+                }
+                else
+                {
+                    Stop();
+                    PlayStateChanged?.Invoke("Stopped");
+                    MediaErrorOccurred?.Invoke($"无法播放: {failed}，且列表已无下一首");
+                }
+            }
         }
 
-        /// <summary>
-        /// 批量向播放列表添加文件
-        /// </summary>
-        public void AddRangeToPlaylist(string[] filePaths)
+        // ==================== 进度定时器 ====================
+
+        private void ProgressTimer_Tick(object sender, EventArgs e)
         {
-            _playlistManager.AddRange(filePaths);
+            if (_mediaPlayer.IsPlaying && _mediaPlayer.Length > 0)
+            {
+                double cur = TimeSpan.FromMilliseconds(_mediaPlayer.Time).TotalSeconds;
+                double total = TimeSpan.FromMilliseconds(_mediaPlayer.Length).TotalSeconds;
+                ProgressUpdated?.Invoke(cur, total);
+            }
         }
 
-        /// <summary>
-        /// 从播放列表移除指定索引的项
-        /// </summary>
-        public void RemoveFromPlaylist(int index)
-        {
-            _playlistManager.RemoveAt(index);
-        }
+        // ==================== 播放列表操作(透传) ====================
 
-        /// <summary>
-        /// 清空播放列表并停止播放
-        /// </summary>
+        public void AddToPlaylist(string path) => _playlistManager.Add(path);
+        public void AddRangeToPlaylist(string[] paths) => _playlistManager.AddRange(paths);
+        public void RemoveFromPlaylist(int idx) => _playlistManager.RemoveAt(idx);
+
         public void ClearPlaylist()
         {
             Stop();
@@ -392,161 +209,28 @@ namespace FinalTest.Services
             TrackChanged?.Invoke(null);
         }
 
-        // ==================== 事件处理 ====================
+        public PlaylistManager GetPlaylistManager() => _playlistManager;
 
-        /// <summary>
-        /// WMP 播放状态变化事件处理
-        ///
-        /// 核心逻辑：
-        /// - MediaEnded（媒体播放完毕）：自动播放下一首
-        ///   使用 _isChangingTrack 标志防止递归（Next() 方法中的 Play() 会再次触发此事件）
-        /// - Playing（开始播放）：通知 UI 更新播放按钮状态
-        /// - Stopped/Paused：更新定时器状态
-        /// </summary>
-        private void WmPlayer_PlayStateChange(object sender, AxWMPLib._WMPOCXEvents_PlayStateChangeEvent e)
-        {
-            var state = (WMPLib.WMPPlayState)e.newState;
+        // ==================== 工具 ====================
 
-            switch (state)
-            {
-                case WMPLib.WMPPlayState.wmppsMediaEnded:
-                    // 媒体播放完毕，自动切换到下一首
-                    if (!_isChangingTrack)
-                    {
-                        int nextIndex = _playlistManager.GetNextIndex(_playMode);
-                        if (nextIndex < 0)
-                        {
-                            // 顺序模式播完停止
-                            _progressTimer.Stop();
-                            PlayStateChanged?.Invoke("Stopped");
-                        }
-                        else
-                        {
-                            _isChangingTrack = true;
-                            _playlistManager.CurrentIndex = nextIndex;
-                            Play();
-                            _isChangingTrack = false;
-                            TrackChanged?.Invoke(_playlistManager.CurrentItem);
-                        }
-                    }
-                    break;
-
-                case WMPLib.WMPPlayState.wmppsPlaying:
-                    // 播放中：更新媒体项时长信息
-                    if (_wmPlayer?.currentMedia != null)
-                    {
-                        var item = _playlistManager.CurrentItem;
-                        if (item != null)
-                        {
-                            double dur = _wmPlayer.currentMedia.duration;
-                            item.Duration = FormatTime(dur);
-                        }
-                    }
-                    PlayStateChanged?.Invoke("Playing");
-                    break;
-
-                case WMPLib.WMPPlayState.wmppsPaused:
-                    PlayStateChanged?.Invoke("Paused");
-                    break;
-
-                case WMPLib.WMPPlayState.wmppsStopped:
-                    _progressTimer.Stop();
-                    PlayStateChanged?.Invoke("Stopped");
-                    break;
-
-                case WMPLib.WMPPlayState.wmppsReady:
-                    PlayStateChanged?.Invoke("Ready");
-                    break;
-            }
-        }
-
-        /// <summary>
-        /// 媒体出错事件处理
-        /// 当文件无法播放时，尝试跳到下一首
-        /// </summary>
-        private void WmPlayer_MediaError(object sender, AxWMPLib._WMPOCXEvents_MediaErrorEvent e)
-        {
-            // 记录出错的文件名
-            string failedFile = _playlistManager.CurrentItem?.Title ?? "未知文件";
-
-            // 文件无法解码（格式不支持、文件损坏等）
-            if (!_isChangingTrack && _playlistManager.Count > 0)
-            {
-                int nextIndex = _playlistManager.GetNextIndex(_playMode);
-                if (nextIndex >= 0)
-                {
-                    _isChangingTrack = true;
-                    _playlistManager.CurrentIndex = nextIndex;
-                    Play();
-                    _isChangingTrack = false;
-                    TrackChanged?.Invoke(_playlistManager.CurrentItem);
-                    MediaErrorOccurred?.Invoke($"已跳过: {failedFile} (格式不支持或文件损坏)");
-                }
-                else
-                {
-                    Stop();
-                    PlayStateChanged?.Invoke("Stopped");
-                    MediaErrorOccurred?.Invoke($"无法播放: {failedFile}，且列表已无下一首");
-                }
-            }
-        }
-
-        /// <summary>
-        /// 进度定时器 Tick 事件：定期上报当前播放进度
-        /// </summary>
-        private void ProgressTimer_Tick(object sender, EventArgs e)
-        {
-            if (_wmPlayer?.currentMedia != null && IsPlaying)
-            {
-                double current = _wmPlayer.Ctlcontrols.currentPosition;
-                double total = _wmPlayer.currentMedia.duration;
-                ProgressUpdated?.Invoke(current, total);
-            }
-        }
-
-        // ==================== 工具方法 ====================
-
-        /// <summary>
-        /// 将秒数格式化为 mm:ss 或 hh:mm:ss 字符串
-        /// </summary>
-        /// <param name="seconds">秒数</param>
-        /// <returns>格式化时间字符串</returns>
         public static string FormatTime(double seconds)
         {
             if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0)
                 return "00:00";
-
-            TimeSpan ts = TimeSpan.FromSeconds(seconds);
-            if (ts.TotalHours >= 1)
-                return ts.ToString(@"hh\:mm\:ss");
-            else
-                return ts.ToString(@"mm\:ss");
+            var ts = TimeSpan.FromSeconds(seconds);
+            return ts.TotalHours >= 1 ? ts.ToString(@"hh\:mm\:ss") : ts.ToString(@"mm\:ss");
         }
 
-        /// <summary>
-        /// 获取播放列表管理器引用（供 UI 层直接操作列表）
-        /// </summary>
-        public PlaylistManager GetPlaylistManager()
-        {
-            return _playlistManager;
-        }
+        // ==================== 释放 ====================
 
-        /// <summary>
-        /// 释放资源
-        /// </summary>
         public void Dispose()
         {
             if (!_disposed)
             {
                 _progressTimer?.Stop();
                 _progressTimer?.Dispose();
-
-                if (_wmPlayer != null)
-                {
-                    try { _wmPlayer.Ctlcontrols.stop(); } catch { }
-                    try { _wmPlayer.Dispose(); } catch { }
-                }
-
+                _mediaPlayer?.Dispose();
+                _libVLC?.Dispose();
                 _disposed = true;
             }
         }
