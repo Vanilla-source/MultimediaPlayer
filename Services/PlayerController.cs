@@ -18,6 +18,11 @@ namespace FinalTest.Services
     /// - PlayStateChange 事件监听 WMP 播放状态，当媒体播放完毕（MediaEnded）时自动切歌
     /// - 切歌逻辑根据 PlayMode 决定下一首索引，索引为 -1 则停止播放
     /// - 音量映射：WMP 音量范围为 0-100（整数），与 UI 滑块 0-100 直接对应
+    ///
+    /// 设计器兼容：
+    /// - _wmPlayer 可能为 null（VS 设计器加载时 COM 互操作程序集尚未生成）
+    /// - 所有访问 _wmPlayer 的方法均使用 null 条件操作符保护
+    /// - 通过 IsWmpAvailable 属性让 UI 层判断是否处于设计器模式
     /// </summary>
     public class PlayerController : IDisposable
     {
@@ -25,6 +30,7 @@ namespace FinalTest.Services
 
         /// <summary>
         /// Windows Media Player ActiveX 控件实例
+        /// 设计器模式下可能为 null（COM 互操作程序集尚未生成）
         /// uiMode 设置为 "none" 以隐藏 WMP 自带 UI，使用自定义控件
         /// </summary>
         private readonly AxWMPLib.AxWindowsMediaPlayer _wmPlayer;
@@ -83,7 +89,14 @@ namespace FinalTest.Services
         // ==================== 属性 ====================
 
         /// <summary>
+        /// 判断 WMP ActiveX 控件是否可用
+        /// 运行时始终为 true；VS 设计器加载时可能为 false
+        /// </summary>
+        public bool IsWmpAvailable => _wmPlayer != null;
+
+        /// <summary>
         /// 获取底层 WMP 控件引用（供 MainForm 添加到窗体控件树）
+        /// 设计器模式下可能返回 null
         /// </summary>
         public AxWMPLib.AxWindowsMediaPlayer WmPlayerControl => _wmPlayer;
 
@@ -112,25 +125,32 @@ namespace FinalTest.Services
         /// <summary>
         /// 判断播放器当前是否正在播放
         /// </summary>
-        public bool IsPlaying => _wmPlayer.playState == WMPLib.WMPPlayState.wmppsPlaying;
+        public bool IsPlaying =>
+            _wmPlayer != null && _wmPlayer.playState == WMPLib.WMPPlayState.wmppsPlaying;
 
         /// <summary>
         /// 获取当前播放进度（秒）
         /// </summary>
-        public double CurrentPosition => _wmPlayer.Ctlcontrols.currentPosition;
+        public double CurrentPosition =>
+            _wmPlayer?.Ctlcontrols.currentPosition ?? 0;
 
         /// <summary>
         /// 获取当前媒体总时长（秒）
         /// </summary>
-        public double Duration => _wmPlayer.currentMedia?.duration ?? 0;
+        public double Duration =>
+            _wmPlayer?.currentMedia?.duration ?? 0;
 
         /// <summary>
         /// 获取或设置音量（0-100）
         /// </summary>
         public int Volume
         {
-            get => _wmPlayer.settings.volume;
-            set => _wmPlayer.settings.volume = Math.Max(0, Math.Min(100, value));
+            get => _wmPlayer?.settings.volume ?? 50;
+            set
+            {
+                if (_wmPlayer != null)
+                    _wmPlayer.settings.volume = Math.Max(0, Math.Min(100, value));
+            }
         }
 
         /// <summary>
@@ -153,12 +173,27 @@ namespace FinalTest.Services
         /// <summary>
         /// 初始化播放器控制器
         /// 创建 WMP 控件、播放列表管理器、进度定时器，并注册事件
+        ///
+        /// 设计器安全：
+        /// - WMP ActiveX 控件创建包装在 try-catch 中
+        /// - 若 COM 互操作程序集不可用（设计器首次加载），_wmPlayer 保持为 null
+        /// - 所有 WMP 相关操作通过 null 条件操作符安全降级
         /// </summary>
         public PlayerController()
         {
-            // 创建 WMP ActiveX 控件
-            _wmPlayer = new AxWMPLib.AxWindowsMediaPlayer();
-            _wmPlayer.Enabled = true;
+            // 尝试创建 WMP ActiveX 控件
+            // 设计器模式下 COM 互操作程序集尚未生成，创建会失败
+            try
+            {
+                _wmPlayer = new AxWMPLib.AxWindowsMediaPlayer();
+                _wmPlayer.Enabled = true;
+            }
+            catch (Exception)
+            {
+                // 设计器模式：COM 互操作程序集尚未生成，_wmPlayer 保持为 null
+                // 运行时：正常安装的系统不会进入此分支
+                _wmPlayer = null;
+            }
 
             // 初始化播放列表管理器
             _playlistManager = new PlaylistManager();
@@ -173,9 +208,12 @@ namespace FinalTest.Services
 
             _isChangingTrack = false;
 
-            // 注册 WMP 事件
-            _wmPlayer.PlayStateChange += WmPlayer_PlayStateChange;
-            _wmPlayer.MediaError += WmPlayer_MediaError;
+            // 注册 WMP 事件（仅当 WMP 可用时）
+            if (_wmPlayer != null)
+            {
+                _wmPlayer.PlayStateChange += WmPlayer_PlayStateChange;
+                _wmPlayer.MediaError += WmPlayer_MediaError;
+            }
         }
 
         // ==================== 播放控制方法 ====================
@@ -190,6 +228,8 @@ namespace FinalTest.Services
         /// </summary>
         public void Play()
         {
+            if (_wmPlayer == null) return;
+
             var item = _playlistManager.CurrentItem;
             if (item == null) return;
 
@@ -206,6 +246,8 @@ namespace FinalTest.Services
         /// </summary>
         public void Pause()
         {
+            if (_wmPlayer == null) return;
+
             if (_wmPlayer.playState == WMPLib.WMPPlayState.wmppsPlaying)
             {
                 _wmPlayer.Ctlcontrols.pause();
@@ -224,7 +266,10 @@ namespace FinalTest.Services
         /// </summary>
         public void Stop()
         {
-            _wmPlayer.Ctlcontrols.stop();
+            if (_wmPlayer != null)
+            {
+                _wmPlayer.Ctlcontrols.stop();
+            }
             _progressTimer.Stop();
         }
 
@@ -240,7 +285,6 @@ namespace FinalTest.Services
             int nextIndex = _playlistManager.GetNextIndex(_playMode);
             if (nextIndex < 0)
             {
-                // 顺序模式播完最后一首，停止
                 Stop();
                 return;
             }
@@ -296,7 +340,7 @@ namespace FinalTest.Services
         /// <param name="seconds">目标位置（秒）</param>
         public void Seek(double seconds)
         {
-            if (_wmPlayer.currentMedia != null)
+            if (_wmPlayer?.currentMedia != null)
             {
                 _wmPlayer.Ctlcontrols.currentPosition = seconds;
             }
@@ -370,7 +414,7 @@ namespace FinalTest.Services
                         {
                             _isChangingTrack = true;
                             _playlistManager.CurrentIndex = nextIndex;
-                            Play(); // 递归触发 PlayStateChange
+                            Play();
                             _isChangingTrack = false;
                             TrackChanged?.Invoke(_playlistManager.CurrentItem);
                         }
@@ -379,7 +423,7 @@ namespace FinalTest.Services
 
                 case WMPLib.WMPPlayState.wmppsPlaying:
                     // 播放中：更新媒体项时长信息
-                    if (_wmPlayer.currentMedia != null)
+                    if (_wmPlayer?.currentMedia != null)
                     {
                         var item = _playlistManager.CurrentItem;
                         if (item != null)
@@ -431,7 +475,7 @@ namespace FinalTest.Services
         /// </summary>
         private void ProgressTimer_Tick(object sender, EventArgs e)
         {
-            if (_wmPlayer.currentMedia != null && IsPlaying)
+            if (_wmPlayer?.currentMedia != null && IsPlaying)
             {
                 double current = _wmPlayer.Ctlcontrols.currentPosition;
                 double total = _wmPlayer.currentMedia.duration;
@@ -476,9 +520,11 @@ namespace FinalTest.Services
                 _progressTimer?.Stop();
                 _progressTimer?.Dispose();
 
-                // 停止 WMP 播放
-                try { _wmPlayer?.Ctlcontrols.stop(); } catch { }
-                try { _wmPlayer?.Dispose(); } catch { }
+                if (_wmPlayer != null)
+                {
+                    try { _wmPlayer.Ctlcontrols.stop(); } catch { }
+                    try { _wmPlayer.Dispose(); } catch { }
+                }
 
                 _disposed = true;
             }

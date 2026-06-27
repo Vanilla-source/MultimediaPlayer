@@ -46,6 +46,12 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <!-- COM 引用：Windows Media Player -->
+  <!--
+    需要两个 COM 引用：
+    1. WMPLib (tlbimp) — 生成 Interop.WMPLib.dll，提供类型库互操作
+    2. AxWMPLib (aximp) — 生成 AxInterop.WMPLib.dll，提供 WinForms ActiveX 宿主包装
+    两个引用共享同一 CLSID，通过 WrapperTool 区分
+  -->
   <ItemGroup>
     <COMReference Include="WMPLib">
       <Guid>{6BF52A50-394A-11D3-B153-00C04F79FAA6}</Guid>
@@ -53,6 +59,15 @@
       <VersionMinor>0</VersionMinor>
       <Lcid>0</Lcid>
       <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
+    <COMReference Include="AxWMPLib">
+      <Guid>{6BF52A50-394A-11D3-B153-00C04F79FAA6}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>aximp</WrapperTool>
       <Isolated>False</Isolated>
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </COMReference>

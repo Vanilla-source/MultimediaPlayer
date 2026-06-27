@@ -94,13 +94,6 @@ namespace FinalTest
         /// </summary>
         private bool _isClosing;
 
-        /// <summary>
-        /// 计时器用于限制进度条更新频率
-        /// </summary>
-        private System.Timers.Timer _throttleTimer;
-        private double _pendingCurrentTime;
-        private double _pendingTotalTime;
-
         // ==================== 构造函数 ====================
 
         public MainForm()
@@ -233,19 +226,37 @@ namespace FinalTest
             _videoPanel.DragEnter += VideoPanel_DragEnter;
             _videoPanel.DragDrop += VideoPanel_DragDrop;
 
-            // 将 WMP ActiveX 控件嵌入视频面板
+            // 将 WMP ActiveX 控件（或占位标签）嵌入视频面板
+            // 设计器模式下 WMP COM 互操作程序集尚未生成，WmPlayerControl 为 null
+            // 此时显示占位标签，运行时则嵌入真实的 WMP 控件
             var wmpControl = _playerController.WmPlayerControl;
-            wmpControl.Dock = DockStyle.Fill;
-            // 【重要】设置 uiMode 为 "none" 隐藏 WMP 自带 UI，使用自定义控件
-            wmpControl.uiMode = "none";
-            // 启用拉伸以适应窗口
-            wmpControl.stretchToFit = true;
-            // 设置初始音量
-            wmpControl.settings.volume = 50;
-            // 注册右键菜单
-            wmpControl.ContextMenuStrip = CreateVideoContextMenu();
+            if (wmpControl != null)
+            {
+                // 运行时：嵌入真实的 WMP ActiveX 控件
+                wmpControl.Dock = DockStyle.Fill;
+                // 【重要】设置 uiMode 为 "none" 隐藏 WMP 自带 UI，使用自定义控件
+                wmpControl.uiMode = "none";
+                // 启用拉伸以适应窗口
+                wmpControl.stretchToFit = true;
+                // 设置初始音量
+                wmpControl.settings.volume = 50;
+                // 注册右键菜单
+                wmpControl.ContextMenuStrip = CreateVideoContextMenu();
 
-            _videoPanel.Controls.Add(wmpControl);
+                _videoPanel.Controls.Add(wmpControl);
+            }
+            else
+            {
+                // 设计器模式：显示占位标签，提示用户生成项目后即可正常显示
+                var placeholder = new Label();
+                placeholder.Text = "Windows Media Player 视频区域\n\n请生成项目 (Ctrl+Shift+B) 后\n重新打开窗体设计器";
+                placeholder.Dock = DockStyle.Fill;
+                placeholder.TextAlign = ContentAlignment.MiddleCenter;
+                placeholder.ForeColor = Color.Gray;
+                placeholder.Font = new Font("Microsoft YaHei", 11F);
+                placeholder.BackColor = Color.Black;
+                _videoPanel.Controls.Add(placeholder);
+            }
 
             // ---- 播放列表面板 ----
             _playlistPanel = new Panel();
@@ -416,8 +427,16 @@ namespace FinalTest
             var menu = new ContextMenuStrip();
             menu.Items.Add("全屏", null, (s, e) => ToggleFullscreen());
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("画面比例 4:3", null, (s, e) => _playerController.WmPlayerControl.stretchToFit = false);
-            menu.Items.Add("拉伸填充", null, (s, e) => _playerController.WmPlayerControl.stretchToFit = true);
+            menu.Items.Add("画面比例 4:3", null, (s, e) =>
+            {
+                if (_playerController.WmPlayerControl != null)
+                    _playerController.WmPlayerControl.stretchToFit = false;
+            });
+            menu.Items.Add("拉伸填充", null, (s, e) =>
+            {
+                if (_playerController.WmPlayerControl != null)
+                    _playerController.WmPlayerControl.stretchToFit = true;
+            });
             return menu;
         }
 
@@ -722,10 +741,12 @@ namespace FinalTest
         /// </summary>
         private void ToggleFullscreen()
         {
+            var wmp = _playerController.WmPlayerControl;
+            if (wmp == null) return;
+
             try
             {
-                _playerController.WmPlayerControl.fullScreen =
-                    !_playerController.WmPlayerControl.fullScreen;
+                wmp.fullScreen = !wmp.fullScreen;
             }
             catch
             {
