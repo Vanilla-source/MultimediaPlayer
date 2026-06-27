@@ -257,10 +257,16 @@ namespace FinalTest
                 wmpControl.Dock = DockStyle.Fill;
                 wmpControl.ContextMenuStrip = CreateVideoContextMenu();
 
-                // 步骤2：添加到父容器 —— 此时创建窗口句柄，ActiveX 完成初始化
+                // 步骤2：添加到父容器
                 _videoPanel.Controls.Add(wmpControl);
 
-                // 步骤3：设置 COM 属性（HWND 已存在，直接赋值不用 try-catch）
+                // 步骤3：强制创建 ActiveX 底层窗口句柄
+                // 窗体构造函数期间还未 Show()，Controls.Add 不会立即创建 HWND
+                // 没有 HWND 则 uiMode/settings 等 COM 属性必抛异常
+                if (!wmpControl.Created)
+                    wmpControl.CreateControl();
+
+                // 步骤4：设置 COM 属性（HWND 已就绪）
                 wmpControl.uiMode = "none";
                 wmpControl.stretchToFit = true;
                 wmpControl.settings.volume = 80;
