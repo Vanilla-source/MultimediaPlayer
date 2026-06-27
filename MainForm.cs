@@ -46,16 +46,16 @@ namespace FinalTest
         private ToolStripMenuItem _modeMenu;
         private ToolStripMenuItem _helpMenu;
 
-        // ==================== 工具栏 ====================
-        private ToolStrip _toolStrip;
-        private ToolStripButton _btnPlay;
-        private ToolStripButton _btnPause;
-        private ToolStripButton _btnStop;
-        private ToolStripButton _btnPrevious;
-        private ToolStripButton _btnNext;
-        private ToolStripLabel _lblVolume;
-        private ToolStripTrackBar _trackBarVolume;
-        private ToolStripLabel _lblTimeDisplay;
+        // ==================== 播放控制栏（视频区下方） ====================
+        private Panel _controlBar;
+        private Button _btnPlay;
+        private Button _btnPause;
+        private Button _btnStop;
+        private Button _btnPrevious;
+        private Button _btnNext;
+        private TrackBar _trackBarVolume;
+        private Label _lblVolume;
+        private Label _lblControlTime;
 
         // ==================== 分割容器 ====================
         private SplitContainer _splitContainer;
@@ -124,7 +124,7 @@ namespace FinalTest
         private void MainForm_Load(object sender, EventArgs e)
         {
             // 1. 根据实际窗体大小计算 SplitContainer 分割比例（构造时 ClientSize 不准确）
-            _splitContainer.SplitterDistance = (int)(this.ClientSize.Width * 0.65);
+            _splitContainer.SplitterDistance = (int)(this.ClientSize.Width * 0.55);
 
             // VLC 引擎已在 PlayerController 构造时初始化，无需额外设置
         }
@@ -214,45 +214,6 @@ namespace FinalTest
             });
 
             _menuStrip.Items.AddRange(new ToolStripItem[] { _fileMenu, _playMenu, _modeMenu, _helpMenu });
-
-            // ========== 工具栏 ==========
-            _toolStrip = new ToolStrip();
-            _toolStrip.GripStyle = ToolStripGripStyle.Hidden;
-
-            _btnPlay = CreateToolButton("▶ 播放", (s, e) =>
-            {
-                // 如果从未播放过则从第一首开始，否则切换暂停/播放
-                if (_playerController.CurrentPlaylistIndex < 0 && _playerController.PlaylistCount > 0)
-                    _playerController.PlayAtIndex(0);
-                else
-                    _playerController.Pause();      // 暂停/播放切换
-                RefreshPlaylistDisplay();
-            });
-            _btnPause = CreateToolButton("⏸ 暂停", (s, e) => _playerController.Pause());
-            _btnStop = CreateToolButton("⏹ 停止", (s, e) => _playerController.Stop());
-            _btnPrevious = CreateToolButton("⏮ 上一首", (s, e) => _playerController.Previous());
-            _btnNext = CreateToolButton("⏭ 下一首", (s, e) => _playerController.Next());
-
-            _lblVolume = new ToolStripLabel("音量:");
-            _trackBarVolume = new ToolStripTrackBar();
-            _trackBarVolume.Minimum = 0;
-            _trackBarVolume.Maximum = 100;
-            _trackBarVolume.Value = 50;
-            _trackBarVolume.TickFrequency = 10;
-            _trackBarVolume.Size = new Size(120, 25);
-            _trackBarVolume.Scroll += (s, e) => _playerController.Volume = _trackBarVolume.Value;
-
-            _lblTimeDisplay = new ToolStripLabel("00:00 / 00:00");
-            _lblTimeDisplay.Alignment = ToolStripItemAlignment.Right;
-
-            _toolStrip.Items.AddRange(new ToolStripItem[]
-            {
-                _btnPlay, _btnPause, _btnStop, _btnPrevious, _btnNext,
-                new ToolStripSeparator(),
-                _lblVolume, _trackBarVolume,
-                new ToolStripSeparator(),
-                _lblTimeDisplay
-            });
 
             // ========== 分割容器 ==========
             _splitContainer = new SplitContainer();
@@ -373,9 +334,16 @@ namespace FinalTest
             _audioInfoPanel.Controls.Add(_lblAudioTitle);
             _audioInfoPanel.Controls.Add(_lblAudioIcon);
 
-            // Panel1 中同时存在视频面板和音频面板，根据媒体类型切换可见性
-            _splitContainer.Panel1.Controls.Add(_videoPanel);
-            _splitContainer.Panel1.Controls.Add(_audioInfoPanel);
+            // ========== 播放控制栏（视频区下方） ==========
+            BuildControlBar();
+
+            // Panel1: 显示区(上) + 控制栏(下)
+            var displayPanel = new Panel { Dock = DockStyle.Fill };
+            displayPanel.Controls.Add(_videoPanel);
+            displayPanel.Controls.Add(_audioInfoPanel);
+
+            _splitContainer.Panel1.Controls.Add(displayPanel);
+            _splitContainer.Panel1.Controls.Add(_controlBar);
             _splitContainer.Panel2.Controls.Add(_playlistPanel);
 
             // ========== 状态栏 ==========
@@ -409,9 +377,97 @@ namespace FinalTest
 
             // ========== 组装主窗体控件 ==========
             Controls.Add(_splitContainer);
-            Controls.Add(_toolStrip);
             Controls.Add(_menuStrip);
             Controls.Add(_statusStrip);
+        }
+
+        // ==================== 播放控制栏构建 ====================
+
+        /// <summary>
+        /// 构建视频区下方的播放控制栏（大按钮 + 音量 + 时间）
+        /// </summary>
+        private void BuildControlBar()
+        {
+            _controlBar = new Panel();
+            _controlBar.Dock = DockStyle.Bottom;
+            _controlBar.Height = 56;
+            _controlBar.BackColor = Color.FromArgb(40, 40, 40);
+            _controlBar.Padding = new Padding(8, 8, 8, 4);
+
+            // 播放按钮风格
+            FlatStyle flat = FlatStyle.Flat;
+            int btnW = 48, btnH = 40;
+            var btnFont = new Font("Segoe UI", 12F);
+            var btnColor = Color.FromArgb(60, 60, 60);
+
+            _btnPrevious = NewBtn("⏮", (s, e) => _playerController.Previous(), btnW);
+            _btnPlay     = NewBtn("▶",  (s, e) => BtnPlay_Click(), btnW);
+            _btnPause    = NewBtn("⏸", (s, e) => _playerController.Pause(), btnW);
+            _btnStop     = NewBtn("⏹", (s, e) => _playerController.Stop(), btnW);
+            _btnNext     = NewBtn("⏭", (s, e) => _playerController.Next(), btnW);
+
+            _lblVolume = new Label
+            {
+                Text = "🔊", ForeColor = Color.LightGray, TextAlign = ContentAlignment.MiddleCenter,
+                Size = new Size(30, btnH), Font = new Font("Segoe UI", 10F)
+            };
+
+            _trackBarVolume = new TrackBar
+            {
+                Minimum = 0, Maximum = 100, Value = 80,
+                TickStyle = TickStyle.None, Size = new Size(110, btnH),
+                BackColor = Color.FromArgb(40, 40, 40)
+            };
+            _trackBarVolume.Scroll += (s, e) => _playerController.Volume = _trackBarVolume.Value;
+
+            _lblControlTime = new Label
+            {
+                Text = "00:00 / 00:00", ForeColor = Color.LightGray,
+                TextAlign = ContentAlignment.MiddleRight, AutoSize = true,
+                Font = new Font("Consolas", 10F), Dock = DockStyle.Right
+            };
+
+            _controlBar.Controls.AddRange(new Control[]
+            {
+                _btnPrevious, _btnPlay, _btnPause, _btnStop, _btnNext,
+                _lblVolume, _trackBarVolume, _lblControlTime
+            });
+
+            // 水平排列
+            int x = 8;
+            foreach (Control c in _controlBar.Controls)
+            {
+                if (c is Button) { c.Location = new Point(x, 8); x += c.Width + 4; }
+            }
+            _lblVolume.Location = new Point(x + 8, 18);
+            _trackBarVolume.Location = new Point(x + 38, 14);
+            _lblControlTime.Location = new Point(_controlBar.Width - 200, 18);
+            _lblControlTime.Width = 190;
+
+            // 内部辅助：创建按钮
+            Button NewBtn(string text, EventHandler click, int w)
+            {
+                var b = new Button
+                {
+                    Text = text, FlatStyle = flat, Width = w, Height = btnH,
+                    Font = btnFont, BackColor = btnColor, ForeColor = Color.White,
+                    FlatAppearance = { BorderSize = 0 },
+                    UseVisualStyleBackColor = false, Cursor = Cursors.Hand
+                };
+                b.Click += click;
+                b.FlatAppearance.MouseOverBackColor = Color.FromArgb(0, 120, 215);
+                b.FlatAppearance.MouseDownBackColor = Color.FromArgb(0, 80, 160);
+                return b;
+            }
+        }
+
+        private void BtnPlay_Click()
+        {
+            if (_playerController.CurrentPlaylistIndex < 0 && _playerController.PlaylistCount > 0)
+                _playerController.PlayAtIndex(0);
+            else
+                _playerController.Pause();
+            RefreshPlaylistDisplay();
         }
 
         // ==================== UI 辅助方法 ====================
@@ -438,17 +494,6 @@ namespace FinalTest
             if (mode == PlayMode.Sequential)
                 item.Checked = true;
             return item;
-        }
-
-        /// <summary>
-        /// 创建工具栏按钮
-        /// </summary>
-        private ToolStripButton CreateToolButton(string text, EventHandler onClick)
-        {
-            var btn = new ToolStripButton(text);
-            btn.Click += onClick;
-            btn.DisplayStyle = ToolStripItemDisplayStyle.Text;
-            return btn;
         }
 
         /// <summary>
@@ -644,7 +689,7 @@ namespace FinalTest
 
             string timeText = $"{PlayerController.FormatTime(current)} / {PlayerController.FormatTime(total)}";
             _lblTrackTime.Text = timeText;
-            _lblTimeDisplay.Text = timeText;
+            _lblControlTime.Text = timeText;
 
             // 播放音频时同步更新音频面板上的时长
             if (_audioInfoPanel.Visible)
@@ -839,19 +884,18 @@ namespace FinalTest
         /// </summary>
         private void ToggleFullscreen()
         {
-            // 手动模拟全屏：最大化窗口 + 隐藏菜单/工具栏/状态栏
             if (_menuStrip.Visible)
             {
                 this.WindowState = FormWindowState.Maximized;
                 _menuStrip.Visible = false;
-                _toolStrip.Visible = false;
+                _controlBar.Visible = false;
                 _statusStrip.Visible = false;
             }
             else
             {
                 this.WindowState = FormWindowState.Normal;
                 _menuStrip.Visible = true;
-                _toolStrip.Visible = true;
+                _controlBar.Visible = true;
                 _statusStrip.Visible = true;
             }
         }
@@ -1185,48 +1229,4 @@ namespace FinalTest
         }
     }
 
-    /// <summary>
-    /// 工具栏 TrackBar 包装类
-    /// 使得 TrackBar 可以作为 ToolStrip 子项嵌入工具栏
-    /// </summary>
-    public class ToolStripTrackBar : ToolStripControlHost
-    {
-        public ToolStripTrackBar() : base(new TrackBar())
-        {
-            TrackBarControl.Height = 25;
-            TrackBarControl.TickStyle = TickStyle.None;
-        }
-
-        public TrackBar TrackBarControl => (TrackBar)Control;
-
-        public int Minimum
-        {
-            get => TrackBarControl.Minimum;
-            set => TrackBarControl.Minimum = value;
-        }
-
-        public int Maximum
-        {
-            get => TrackBarControl.Maximum;
-            set => TrackBarControl.Maximum = value;
-        }
-
-        public int Value
-        {
-            get => TrackBarControl.Value;
-            set => TrackBarControl.Value = value;
-        }
-
-        public int TickFrequency
-        {
-            get => TrackBarControl.TickFrequency;
-            set => TrackBarControl.TickFrequency = value;
-        }
-
-        public event EventHandler Scroll
-        {
-            add => TrackBarControl.Scroll += value;
-            remove => TrackBarControl.Scroll -= value;
-        }
-    }
 }
