@@ -238,15 +238,22 @@ namespace FinalTest
             _videoPanel.DragDrop += VideoPanel_DragDrop;
 
             // WMP ActiveX 控件（或设计器占位标签）
+            // 【关键】必须先 Add 到父容器（创建窗口句柄），再设置 COM 属性
+            // ActiveX 控件需要有效的 HWND 才能响应 uiMode/stretchToFit 等属性写入
             var wmpControl = _playerController.WmPlayerControl;
             if (wmpControl != null)
             {
+                // 步骤1：先设置 .NET 托管属性（不需要 HWND）
                 wmpControl.Dock = DockStyle.Fill;
-                wmpControl.uiMode = "none";
-                wmpControl.stretchToFit = true;
-                wmpControl.settings.volume = 50;
                 wmpControl.ContextMenuStrip = CreateVideoContextMenu();
+
+                // 步骤2：添加到父容器 —— 此时创建窗口句柄，ActiveX 完成初始化
                 _videoPanel.Controls.Add(wmpControl);
+
+                // 步骤3：再设置 COM 属性（此时 HWND 已存在，属性写入安全）
+                try { wmpControl.uiMode = "none"; } catch { }
+                try { wmpControl.stretchToFit = true; } catch { }
+                try { wmpControl.settings.volume = 50; } catch { }
             }
             else
             {
