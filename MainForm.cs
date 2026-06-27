@@ -606,9 +606,9 @@ namespace FinalTest
             _lblAudioTitle.Text = item?.Title ?? "";
             _lblAudioDuration.Text = item?.Duration ?? "00:00";
             // 禁用全屏菜单项（音频无全屏需求）
-            foreach (ToolStripMenuItem menuItem in _playMenu.DropDownItems)
+            foreach (ToolStripItem item in _playMenu.DropDownItems)
             {
-                if (menuItem.Text.Contains("全屏"))
+                if (item is ToolStripMenuItem menuItem && menuItem.Text.Contains("全屏"))
                     menuItem.Enabled = false;
             }
         }
@@ -621,9 +621,9 @@ namespace FinalTest
             _videoPanel.BringToFront();
             _audioInfoPanel.Visible = false;
             // 恢复全屏菜单项
-            foreach (ToolStripMenuItem menuItem in _playMenu.DropDownItems)
+            foreach (ToolStripItem item in _playMenu.DropDownItems)
             {
-                if (menuItem.Text.Contains("全屏"))
+                if (item is ToolStripMenuItem menuItem && menuItem.Text.Contains("全屏"))
                     menuItem.Enabled = true;
             }
         }
@@ -683,9 +683,9 @@ namespace FinalTest
         private void OnPlayModeChanged(PlayMode mode)
         {
             // 更新菜单选中状态
-            foreach (ToolStripMenuItem menuItem in _modeMenu.DropDownItems)
+            foreach (ToolStripItem item in _modeMenu.DropDownItems)
             {
-                if (menuItem.Tag is PlayMode itemMode)
+                if (item is ToolStripMenuItem menuItem && menuItem.Tag is PlayMode itemMode)
                 {
                     menuItem.Checked = (itemMode == mode);
                 }
