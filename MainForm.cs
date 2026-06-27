@@ -115,6 +115,30 @@ namespace FinalTest
             InitializePlayerUI();
             RegisterEvents();
             SetupKeyboardShortcuts();
+            // Form.Load 在窗体显示后触发，此时所有 HWND 已就绪，执行延迟初始化
+            this.Load += MainForm_Load;
+        }
+
+        // ==================== 延迟初始化（Form.Load） ====================
+
+        /// <summary>
+        /// 窗体加载完成后执行延迟初始化
+        /// 此时窗体已显示、所有控件 HWND 已创建，ActiveX COM 属性写入安全
+        /// </summary>
+        private void MainForm_Load(object sender, EventArgs e)
+        {
+            // 1. 根据实际窗体大小计算 SplitContainer 分割比例（构造时 ClientSize 不准确）
+            _splitContainer.SplitterDistance = (int)(this.ClientSize.Width * 0.65);
+
+            // 2. 初始化 WMP ActiveX 控件的 COM 属性（需要有效 HWND）
+            var wmp = _playerController.WmPlayerControl;
+            if (wmp != null)
+            {
+                wmp.uiMode = "none";          // 隐藏 WMP 自带 UI
+                wmp.stretchToFit = true;      // 视频拉伸填充
+                wmp.settings.volume = 80;     // 初始音量 80%
+                wmp.settings.mute = false;    // 取消静音
+            }
         }
 
         // ==================== UI 初始化 ====================
@@ -237,7 +261,7 @@ namespace FinalTest
             // ========== 分割容器 ==========
             _splitContainer = new SplitContainer();
             _splitContainer.Dock = DockStyle.Fill;
-            _splitContainer.SplitterDistance = (int)(this.ClientSize.Width * 0.65);
+            // SplitterDistance 在 Form.Load 中根据实际窗体大小计算
 
             // ---- 视频显示面板 ----
             _videoPanel = new Panel();
@@ -260,17 +284,8 @@ namespace FinalTest
                 // 步骤2：添加到父容器
                 _videoPanel.Controls.Add(wmpControl);
 
-                // 步骤3：强制创建 ActiveX 底层窗口句柄
-                // 窗体构造函数期间还未 Show()，Controls.Add 不会立即创建 HWND
-                // 没有 HWND 则 uiMode/settings 等 COM 属性必抛异常
-                if (!wmpControl.Created)
-                    wmpControl.CreateControl();
-
-                // 步骤4：设置 COM 属性（HWND 已就绪）
-                wmpControl.uiMode = "none";
-                wmpControl.stretchToFit = true;
-                wmpControl.settings.volume = 80;
-                wmpControl.settings.mute = false;
+                // 【重要】uiMode/stretchToFit/volume 等 COM 属性需要 HWND
+                // 在构造阶段 HWND 未创建，一律推迟到 Form.Load 事件处理
             }
             else
             {
