@@ -260,10 +260,11 @@ namespace FinalTest
                 // 步骤2：添加到父容器 —— 此时创建窗口句柄，ActiveX 完成初始化
                 _videoPanel.Controls.Add(wmpControl);
 
-                // 步骤3：再设置 COM 属性（此时 HWND 已存在，属性写入安全）
-                try { wmpControl.uiMode = "none"; } catch { }
-                try { wmpControl.stretchToFit = true; } catch { }
-                try { wmpControl.settings.volume = 50; } catch { }
+                // 步骤3：设置 COM 属性（HWND 已存在，直接赋值不用 try-catch）
+                wmpControl.uiMode = "none";
+                wmpControl.stretchToFit = true;
+                wmpControl.settings.volume = 80;
+                wmpControl.settings.mute = false;
             }
             else
             {
@@ -574,12 +575,13 @@ namespace FinalTest
         }
 
         /// <summary>
-        /// 切换到音频模式：隐藏视频面板，显示音频信息面板
+        /// 切换到音频模式：音频面板覆盖在视频面板上方（WMP 控件保持可见不中断播放）
         /// </summary>
         private void SwitchToAudioMode(MediaItem item)
         {
-            _videoPanel.Visible = false;
+            // WMP 控件始终保持 Visible，仅将音频信息面板提到最上层遮挡视频区
             _audioInfoPanel.Visible = true;
+            _audioInfoPanel.BringToFront();
             _lblAudioTitle.Text = item?.Title ?? "";
             _lblAudioDuration.Text = item?.Duration ?? "00:00";
             // 禁用全屏菜单项（音频无全屏需求）
@@ -591,11 +593,11 @@ namespace FinalTest
         }
 
         /// <summary>
-        /// 切换到视频模式：显示视频面板，隐藏音频信息面板
+        /// 切换到视频模式：视频面板提到最上层，隐藏音频面板
         /// </summary>
         private void SwitchToVideoMode()
         {
-            _videoPanel.Visible = true;
+            _videoPanel.BringToFront();
             _audioInfoPanel.Visible = false;
             // 恢复全屏菜单项
             foreach (ToolStripMenuItem menuItem in _playMenu.DropDownItems)

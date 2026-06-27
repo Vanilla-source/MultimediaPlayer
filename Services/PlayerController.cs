@@ -234,6 +234,15 @@ namespace FinalTest.Services
             var item = _playlistManager.CurrentItem;
             if (item == null) return;
 
+            // 每次播放前强制确保音量和取消静音
+            // settings.volume 可能在初始化时被 try-catch 静默吞掉，这里兜底
+            try
+            {
+                _wmPlayer.settings.volume = 80;
+                _wmPlayer.settings.mute = false;
+            }
+            catch { }
+
             // WMP 使用 URL 属性加载媒体文件
             _wmPlayer.URL = item.FilePath;
             _wmPlayer.Ctlcontrols.play();
