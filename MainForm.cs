@@ -65,6 +65,16 @@ namespace FinalTest
         /// </summary>
         private Panel _videoPanel;
 
+        // ==================== 音频显示区域 ====================
+        /// <summary>
+        /// 音频信息面板：播放纯音频时替代视频面板显示
+        /// 包含大号曲目标题、音频图标、时长等信息
+        /// </summary>
+        private Panel _audioInfoPanel;
+        private Label _lblAudioTitle;
+        private Label _lblAudioIcon;
+        private Label _lblAudioDuration;
+
         // ==================== 播放列表面板 ====================
         private Panel _playlistPanel;
         private ListView _listViewPlaylist;
@@ -333,7 +343,42 @@ namespace FinalTest
             buttonPanel.Controls.AddRange(new Control[] { _btnAddFiles, _btnRemove, _btnClear });
             _playlistPanel.Controls.AddRange(new Control[] { _lblPlaylist, _listViewPlaylist, buttonPanel });
 
+            // ---- 音频信息面板（播放纯音频时显示，替代视频面板） ----
+            _audioInfoPanel = new Panel();
+            _audioInfoPanel.Dock = DockStyle.Fill;
+            _audioInfoPanel.BackColor = Color.FromArgb(30, 30, 30);
+            _audioInfoPanel.Visible = false; // 默认隐藏，等播放音频时再显示
+
+            _lblAudioIcon = new Label();
+            _lblAudioIcon.Text = "🎵";
+            _lblAudioIcon.Font = new Font("Segoe UI Symbol", 72F, FontStyle.Regular);
+            _lblAudioIcon.ForeColor = Color.DodgerBlue;
+            _lblAudioIcon.TextAlign = ContentAlignment.MiddleCenter;
+            _lblAudioIcon.Dock = DockStyle.Top;
+            _lblAudioIcon.Height = 150;
+
+            _lblAudioTitle = new Label();
+            _lblAudioTitle.Text = "未在播放";
+            _lblAudioTitle.Font = new Font("Microsoft YaHei", 16F, FontStyle.Bold);
+            _lblAudioTitle.ForeColor = Color.White;
+            _lblAudioTitle.TextAlign = ContentAlignment.MiddleCenter;
+            _lblAudioTitle.Dock = DockStyle.Top;
+            _lblAudioTitle.Height = 50;
+
+            _lblAudioDuration = new Label();
+            _lblAudioDuration.Text = "";
+            _lblAudioDuration.Font = new Font("Microsoft YaHei", 11F);
+            _lblAudioDuration.ForeColor = Color.Gray;
+            _lblAudioDuration.TextAlign = ContentAlignment.MiddleCenter;
+            _lblAudioDuration.Dock = DockStyle.Fill;
+
+            _audioInfoPanel.Controls.Add(_lblAudioDuration);
+            _audioInfoPanel.Controls.Add(_lblAudioTitle);
+            _audioInfoPanel.Controls.Add(_lblAudioIcon);
+
+            // Panel1 中同时存在视频面板和音频面板，根据媒体类型切换可见性
             _splitContainer.Panel1.Controls.Add(_videoPanel);
+            _splitContainer.Panel1.Controls.Add(_audioInfoPanel);
             _splitContainer.Panel2.Controls.Add(_playlistPanel);
 
             // ========== 状态栏 ==========
@@ -509,6 +554,12 @@ namespace FinalTest
 
                 // 在 ListView 中高亮当前项
                 HighlightCurrentItem();
+
+                // 根据媒体类型切换布局：视频 → 视频面板，音频 → 音频信息面板
+                if (item.IsVideo)
+                    SwitchToVideoMode();
+                else
+                    SwitchToAudioMode(item);
             }
             else
             {
@@ -516,6 +567,41 @@ namespace FinalTest
                 this.Text = "多媒体播放器";
                 _progressBar.Value = 0;
                 _lblTrackTime.Text = "00:00 / 00:00";
+
+                // 无曲目时默认显示视频面板
+                SwitchToVideoMode();
+            }
+        }
+
+        /// <summary>
+        /// 切换到音频模式：隐藏视频面板，显示音频信息面板
+        /// </summary>
+        private void SwitchToAudioMode(MediaItem item)
+        {
+            _videoPanel.Visible = false;
+            _audioInfoPanel.Visible = true;
+            _lblAudioTitle.Text = item?.Title ?? "";
+            _lblAudioDuration.Text = item?.Duration ?? "00:00";
+            // 禁用全屏菜单项（音频无全屏需求）
+            foreach (ToolStripMenuItem menuItem in _playMenu.DropDownItems)
+            {
+                if (menuItem.Text.Contains("全屏"))
+                    menuItem.Enabled = false;
+            }
+        }
+
+        /// <summary>
+        /// 切换到视频模式：显示视频面板，隐藏音频信息面板
+        /// </summary>
+        private void SwitchToVideoMode()
+        {
+            _videoPanel.Visible = true;
+            _audioInfoPanel.Visible = false;
+            // 恢复全屏菜单项
+            foreach (ToolStripMenuItem menuItem in _playMenu.DropDownItems)
+            {
+                if (menuItem.Text.Contains("全屏"))
+                    menuItem.Enabled = true;
             }
         }
 
@@ -552,6 +638,12 @@ namespace FinalTest
             string timeText = $"{PlayerController.FormatTime(current)} / {PlayerController.FormatTime(total)}";
             _lblTrackTime.Text = timeText;
             _lblTimeDisplay.Text = timeText;
+
+            // 播放音频时同步更新音频面板上的时长
+            if (_audioInfoPanel.Visible)
+            {
+                _lblAudioDuration.Text = timeText;
+            }
 
             // 更新进度条（使用 1000 刻度精度）
             if (total > 0 && !double.IsNaN(total))
@@ -895,7 +987,9 @@ namespace FinalTest
                         break;
                     case Keys.F11:
                         e.SuppressKeyPress = true;
-                        ToggleFullscreen();
+                        // 仅视频模式支持全屏
+                        if (_videoPanel.Visible)
+                            ToggleFullscreen();
                         break;
                     case Keys.F1:
                         e.SuppressKeyPress = true;
