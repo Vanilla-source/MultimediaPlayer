@@ -100,11 +100,6 @@ namespace FinalTest
         /// </summary>
         private bool _isSeeking;
 
-        /// <summary>
-        /// 标记窗体是否正在关闭（防止关闭时访问已释放资源）
-        /// </summary>
-        private bool _isClosing;
-
         // ==================== 构造函数 ====================
 
         public MainForm()
@@ -1177,7 +1172,6 @@ namespace FinalTest
         /// </summary>
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            _isClosing = true;
             _playerController.Stop();
             _playerController.Dispose();
         }
