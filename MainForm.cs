@@ -104,11 +104,11 @@ namespace FinalTest
         public MainForm()
         {
             _playerController = new PlayerController();
-            InitializeComponent();      // 内部调用 BuildAllControls()
+            InitializeComponent();       // VS 设计器管理（窗体基本属性）
+            BuildAllControls();          // 所有控件创建——即使 VS 覆盖 InitializeComponent 也不受影响
             RegisterEvents();
             SetupKeyboardShortcuts();
             this.Load += MainForm_Load;
-            this.FormClosing += MainForm_FormClosing;
             this.FormClosing += MainForm_FormClosing;
         }
 
@@ -140,12 +140,15 @@ namespace FinalTest
         private void InitializeComponent()
         {
             this.SuspendLayout();
-            this.ClientSize = new System.Drawing.Size(1200, 720);
+            // 
+            // MainForm
+            // 
+            this.ClientSize = new System.Drawing.Size(1699, 940);
+            this.MinimumSize = new System.Drawing.Size(800, 500);
             this.Name = "MainForm";
-            this.StartPosition = FormStartPosition.CenterScreen;
-            this.MinimumSize = new Size(800, 500);
-            BuildAllControls();    // 所有控件创建（设计器和运行时都会执行）
+            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.ResumeLayout(false);
+
         }
 
         /// <summary>
