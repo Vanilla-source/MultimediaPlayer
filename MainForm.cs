@@ -104,8 +104,7 @@ namespace FinalTest
         public MainForm()
         {
             _playerController = new PlayerController();
-            InitializeComponent();       // VS 设计器管理（窗体基本属性）
-            BuildAllControls();          // 所有控件创建——即使 VS 覆盖 InitializeComponent 也不受影响
+            InitializeComponent();       // 包含全部控件创建
             RegisterEvents();
             SetupKeyboardShortcuts();
             this.Load += MainForm_Load;
@@ -137,19 +136,7 @@ namespace FinalTest
         /// - 中间区域使用 SplitContainer 分割为视频区和播放列表区（默认 65:35）
         /// - 底部状态栏显示播放状态和进度
         /// </summary>
-        private void InitializeComponent()
-        {
-            this.SuspendLayout();
-            // 
-            // MainForm
-            // 
-            this.ClientSize = new System.Drawing.Size(1699, 940);
-            this.MinimumSize = new System.Drawing.Size(800, 500);
-            this.Name = "MainForm";
-            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-            this.ResumeLayout(false);
-
-        }
+        // InitializeComponent() 现在在 MainForm.Designer.cs 中（VS 设计器管理）
 
         /// <summary>
         /// 初始化所有自定义播放器 UI 控件（不受 VS 设计器管理）
@@ -165,8 +152,17 @@ namespace FinalTest
         /// - 中间区域使用 SplitContainer 分割为视频区和播放列表区（默认 65:35）
         /// - 底部状态栏显示播放状态和进度
         /// </summary>
-        private void BuildAllControls()
+        private void CreateAllControls()
         {
+            this.SuspendLayout();
+            this.ClientSize = new Size(1200, 720);
+            this.MinimumSize = new Size(800, 500);
+            this.Name = "MainForm";
+            this.Text = "多媒体播放器";
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.KeyPreview = true;
+            this.AllowDrop = true;
+
             // ========== 菜单栏 ==========
             _menuStrip = new MenuStrip();
 
@@ -468,6 +464,8 @@ namespace FinalTest
                 x += w + 8;
                 return p;
             }
+
+            this.ResumeLayout(false);
         }
 
         private void BtnPlay_Click()

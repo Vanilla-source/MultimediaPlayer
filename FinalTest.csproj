@@ -57,6 +57,9 @@
     <Compile Include="MainForm.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="MainForm.Designer.cs">
+      <DependentUpon>MainForm.cs</DependentUpon>
+    </Compile>
     <!-- 数据模型 -->
     <Compile Include="Models\MediaItem.cs" />
     <Compile Include="Models\PlayMode.cs" />
