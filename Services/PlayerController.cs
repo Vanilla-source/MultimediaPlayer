@@ -58,18 +58,20 @@ namespace FinalTest.Services
             set { if (_playMode != value) { _playMode = value; PlayModeChanged?.Invoke(_playMode); } }
         }
 
-        public bool IsPlaying => _mediaPlayer.IsPlaying;
+        public bool IsPlaying => _mediaPlayer != null && _mediaPlayer.IsPlaying;
 
         public double CurrentPosition =>
-            _mediaPlayer.Time >= 0 ? TimeSpan.FromMilliseconds(_mediaPlayer.Time).TotalSeconds : 0;
+            _mediaPlayer != null && _mediaPlayer.Time >= 0
+                ? TimeSpan.FromMilliseconds(_mediaPlayer.Time).TotalSeconds : 0;
 
         public double Duration =>
-            _mediaPlayer.Length > 0 ? TimeSpan.FromMilliseconds(_mediaPlayer.Length).TotalSeconds : 0;
+            _mediaPlayer != null && _mediaPlayer.Length > 0
+                ? TimeSpan.FromMilliseconds(_mediaPlayer.Length).TotalSeconds : 0;
 
         public int Volume
         {
-            get => _mediaPlayer.Volume;
-            set => _mediaPlayer.Volume = Math.Max(0, Math.Min(100, value));
+            get => _mediaPlayer?.Volume ?? 50;
+            set { if (_mediaPlayer != null) _mediaPlayer.Volume = Math.Max(0, Math.Min(100, value)); }
         }
 
         public int PlaylistCount => _playlistManager.Count;
@@ -78,31 +80,40 @@ namespace FinalTest.Services
 
         // ==================== 构造函数 ====================
 
+        public bool IsAvailable { get; }
+
         public PlayerController()
         {
-            // 初始化 VLC 引擎（与操作系统匹配的架构）
-            _libVLC = new LibVLC();
-            _mediaPlayer = new MediaPlayer(_libVLC);
-
             _playlistManager = new PlaylistManager();
             _playMode = PlayMode.Sequential;
-
-            // 进度定时器
             _progressTimer = new Timer { Interval = 500 };
             _progressTimer.Tick += ProgressTimer_Tick;
 
-            // 注册 VLC 事件
-            _mediaPlayer.Playing += (s, e) => { PlayStateChanged?.Invoke("Playing"); };
-            _mediaPlayer.Paused += (s, e) => { _progressTimer.Stop(); PlayStateChanged?.Invoke("Paused"); };
-            _mediaPlayer.Stopped += (s, e) => { _progressTimer.Stop(); PlayStateChanged?.Invoke("Stopped"); };
-            _mediaPlayer.EndReached += MediaPlayer_EndReached;
-            _mediaPlayer.EncounteredError += MediaPlayer_EncounteredError;
+            try
+            {
+                _libVLC = new LibVLC();
+                _mediaPlayer = new MediaPlayer(_libVLC);
+                _mediaPlayer.Playing += (s, e) => { PlayStateChanged?.Invoke("Playing"); };
+                _mediaPlayer.Paused += (s, e) => { _progressTimer.Stop(); PlayStateChanged?.Invoke("Paused"); };
+                _mediaPlayer.Stopped += (s, e) => { _progressTimer.Stop(); PlayStateChanged?.Invoke("Stopped"); };
+                _mediaPlayer.EndReached += MediaPlayer_EndReached;
+                _mediaPlayer.EncounteredError += MediaPlayer_EncounteredError;
+                IsAvailable = true;
+            }
+            catch
+            {
+                // 设计模式或 VLC 未安装时降级
+                _libVLC = null;
+                _mediaPlayer = null;
+                IsAvailable = false;
+            }
         }
 
         // ==================== 播放控制 ====================
 
         public void Play()
         {
+            if (_mediaPlayer == null || _libVLC == null) return;
             var item = _playlistManager.CurrentItem;
             if (item == null) return;
 
@@ -112,8 +123,8 @@ namespace FinalTest.Services
             _progressTimer.Start();
         }
 
-        public void Pause() { _mediaPlayer.Pause(); }
-        public void Stop() { _mediaPlayer.Stop(); _progressTimer.Stop(); }
+        public void Pause() { if (_mediaPlayer != null) _mediaPlayer.Pause(); }
+        public void Stop() { if (_mediaPlayer != null) _mediaPlayer.Stop(); _progressTimer.Stop(); }
 
         public void Next()
         {
@@ -137,7 +148,7 @@ namespace FinalTest.Services
 
         public void Seek(double seconds)
         {
-            if (_mediaPlayer.Length > 0)
+            if (_mediaPlayer != null && _mediaPlayer.Length > 0)
                 _mediaPlayer.Time = (long)(seconds * 1000);
         }
 
@@ -188,7 +199,7 @@ namespace FinalTest.Services
 
         private void ProgressTimer_Tick(object sender, EventArgs e)
         {
-            if (_mediaPlayer.IsPlaying && _mediaPlayer.Length > 0)
+            if (_mediaPlayer != null && _mediaPlayer.IsPlaying && _mediaPlayer.Length > 0)
             {
                 double cur = TimeSpan.FromMilliseconds(_mediaPlayer.Time).TotalSeconds;
                 double total = TimeSpan.FromMilliseconds(_mediaPlayer.Length).TotalSeconds;

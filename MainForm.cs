@@ -104,13 +104,11 @@ namespace FinalTest
         public MainForm()
         {
             _playerController = new PlayerController();
-            InitializeComponent();
-            InitializePlayerUI();
+            InitializeComponent();      // 内部调用 BuildAllControls()
             RegisterEvents();
             SetupKeyboardShortcuts();
-            // Form.Load：窗体显示后所有 HWND 就绪，执行延迟初始化
             this.Load += MainForm_Load;
-            // FormClosing：资源清理
+            this.FormClosing += MainForm_FormClosing;
             this.FormClosing += MainForm_FormClosing;
         }
 
@@ -142,13 +140,12 @@ namespace FinalTest
         private void InitializeComponent()
         {
             this.SuspendLayout();
-            // 
-            // MainForm
-            // 
-            this.ClientSize = new System.Drawing.Size(1831, 925);
+            this.ClientSize = new System.Drawing.Size(1200, 720);
             this.Name = "MainForm";
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.MinimumSize = new Size(800, 500);
+            BuildAllControls();    // 所有控件创建（设计器和运行时都会执行）
             this.ResumeLayout(false);
-
         }
 
         /// <summary>
@@ -165,7 +162,7 @@ namespace FinalTest
         /// - 中间区域使用 SplitContainer 分割为视频区和播放列表区（默认 65:35）
         /// - 底部状态栏显示播放状态和进度
         /// </summary>
-        private void InitializePlayerUI()
+        private void BuildAllControls()
         {
             // ========== 菜单栏 ==========
             _menuStrip = new MenuStrip();
@@ -227,12 +224,22 @@ namespace FinalTest
             _videoPanel.DragEnter += VideoPanel_DragEnter;
             _videoPanel.DragDrop += VideoPanel_DragDrop;
 
-            // VLC VideoView 控件（替换原 WMP ActiveX，无 COM 互操作问题）
-            var videoView = new VideoView();
-            videoView.Dock = DockStyle.Fill;
-            videoView.MediaPlayer = _playerController.MediaPlayer;
-            videoView.ContextMenuStrip = CreateVideoContextMenu();
-            _videoPanel.Controls.Add(videoView);
+            // VLC VideoView 控件，设计模式下显示占位标签
+            if (_playerController.IsAvailable)
+            {
+                var videoView = new VideoView();
+                videoView.Dock = DockStyle.Fill;
+                videoView.MediaPlayer = _playerController.MediaPlayer;
+                videoView.ContextMenuStrip = CreateVideoContextMenu();
+                _videoPanel.Controls.Add(videoView);
+            }
+            else
+            {
+                var ph = new Label { Text = "VLC 视频区域\n（运行时加载）", Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleCenter, ForeColor = Color.Gray,
+                    BackColor = Color.Black, Font = new Font("Microsoft YaHei", 11F) };
+                _videoPanel.Controls.Add(ph);
+            }
 
             // ---- 播放列表面板 ----
             _playlistPanel = new Panel();
